@@ -59,8 +59,7 @@ const CT = (() => {
     for (const r of padres()) {
       if ((r.tipo || 'padre') !== 'padre') continue;
       const x = pega(r.vicariato); x.esperados++;
-      if (r.chegou_em) x.chegaram++; else x.faltam++;
-      if (r.vestimenta_em) x.entregues++;
+      if (r.vestimenta_em) x.entregues++; else x.faltam++;
     }
     pega(RESERVA);
     for (const [l, q] of sal) pega(l).casulas = q;
@@ -73,7 +72,7 @@ const CT = (() => {
     const L = linhasEstoque();
     const tot = L.reduce((a, x) => ({ casulas: a.casulas + x.casulas, entregues: a.entregues + x.entregues, disp: a.disp + x.disp, faltam: a.faltam + x.faltam }), { casulas: 0, entregues: 0, disp: 0, faltam: 0 });
     const admin = S.perfil === 'admin';
-    $('#es-numeros').innerHTML = [['CASULAS', tot.casulas], ['ENTREGUES', tot.entregues], ['DISPONÍVEIS', tot.disp], ['PADRES QUE FALTAM', tot.faltam]]
+    $('#es-numeros').innerHTML = [['CASULAS', tot.casulas], ['ENTREGUES', tot.entregues], ['DISPONÍVEIS', tot.disp], ['FALTAM RECEBER', tot.faltam]]
       .map(([l, n]) => `<div class="es-num"><span>${l}</span><strong>${st.carregado ? fmt(n) : '…'}</strong></div>`).join('');
     const sit = x => {
       if (x.local === RESERVA) return `<span class="es-sit reserva">Reserva</span>`;
@@ -81,11 +80,11 @@ const CT = (() => {
       const d = x.disp - x.faltam;
       return d < 0 ? `<span class="es-sit falta">Pode faltar ${fmt(-d)}</span>` : `<span class="es-sit sobra">${d ? 'Sobra ' + fmt(d) : 'Na conta certa'}</span>`;
     };
-    $('#es-tabela').innerHTML = `<div class="es-cab"><span>LOCAL</span><span>ESPERADOS</span><span>FALTAM CHEGAR</span><span>CASULAS</span><span>ENTREGUES</span><span>DISPONÍVEIS</span><span>SITUAÇÃO</span></div>` +
+    $('#es-tabela').innerHTML = `<div class="es-cab"><span>LOCAL</span><span>ESPERADOS</span><span>FALTAM RECEBER</span><span>CASULAS</span><span>ENTREGUES</span><span>DISPONÍVEIS</span><span>SITUAÇÃO</span></div>` +
       L.map(x => `<div class="es-linha${x.local === RESERVA ? ' es-reserva' : ''}">
         <span class="es-local">${esc(x.local)}${admin ? ` <button type="button" class="es-editar" data-definir="${esc(x.local)}" aria-label="Definir estoque de ${esc(x.local)}">✎</button>` : ''}</span>
         <span data-r="Esperados">${x.local === RESERVA ? '—' : fmt(x.esperados)}</span>
-        <span data-r="Faltam chegar">${x.local === RESERVA ? '—' : fmt(x.faltam)}</span>
+        <span data-r="Faltam receber">${x.local === RESERVA ? '—' : fmt(x.faltam)}</span>
         <span data-r="Casulas">${fmt(x.casulas)}</span>
         <span data-r="Entregues">${fmt(x.entregues)}</span>
         <span data-r="Disponíveis" class="es-disp${x.disp < 0 ? ' neg' : ''}">${fmt(x.disp)}</span>

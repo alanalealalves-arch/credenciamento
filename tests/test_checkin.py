@@ -60,6 +60,12 @@ window.__API_FACTORY__ = () => ({
     const saldo = l => L('estoque_mov').filter(m => m.local === l).reduce((s, m) => s + m.quantidade, 0);
     const entregues = l => ler().filter(p => (p.tipo || 'padre') === 'padre' && p.vestimenta_em && p.vicariato === l).length;
     const novoId = arr => Math.max(0, ...arr.map(x => x.id)) + 1;
+    if (fn === 'entregar_vestimenta') { const arr = ler(); const r = arr.find(x => x.id === a.p_id);
+      if (a.p_valor) { if (r.vestimenta_em) return { status: 'ja', registro: r };
+        if (a.p_para === 'terceiro' && !(a.p_terceiro || '').trim()) throw Error('Informe o nome de quem retirou');
+        Object.assign(r, { vestimenta_em: agora(), vestimenta_por: a.p_recepcionista, vestimenta_para: a.p_para || 'padre', vestimenta_terceiro: a.p_para === 'terceiro' ? a.p_terceiro : null, vestimenta_obs: a.p_obs || null, chegou_em: r.chegou_em || agora() }); }
+      else Object.assign(r, { vestimenta_em: null, vestimenta_por: null, vestimenta_para: null, vestimenta_terceiro: null, vestimenta_obs: null, chegou_em: null, chegou_por: null });
+      gravar(arr); emitir({ tipo: 'UPDATE', novo: { ...r } }); return { status: 'ok', registro: { ...r } }; }
     if (fn === 'definir_estoque') { if (window.__perfil !== 'admin') throw Error('Somente o administrador define o estoque');
       const d = a.p_quantidade - saldo(a.p_local); if (d) { const m = L('estoque_mov'); const r = { id: novoId(m), local: a.p_local, quantidade: d, tipo: 'definicao', por: a.p_recepcionista, criado_em: agora() }; m.push(r); G('estoque_mov', m); emitT('estoque_mov', r); }
       return { status: 'ok' }; }
@@ -115,73 +121,76 @@ class CheckinTests(unittest.TestCase):
     p.wait_for_function("document.querySelector('#ck-esperados').textContent !== '…'")
     return p
   def numeros(self, p):
-    return [p.inner_text(s) for s in ('#ck-esperados', '#ck-chegaram', '#ck-faltam', '#ck-vestimentas')]
+    return [p.inner_text(s) for s in ('#ck-esperados', '#ck-entregues', '#ck-faltam', '#ck-terceiros')]
   def item(self, p, texto):
     return p.locator('.ck-item', has_text=texto)
+  def ao_padre(self, p, texto):
+    self.item(p, texto).locator('[data-entregar="padre"]').click()
+  def a_terceiro(self, p, texto, quem, obs=''):
+    self.item(p, texto).locator('[data-entregar="terceiro"]').click()
+    p.fill('#ck-form-terc input[name="quem"]', quem); p.fill('#ck-form-terc input[name="obs"]', obs); p.click('#ck-terc-ok')
+  def espera(self, p, sel, valor):
+    p.wait_for_function("document.querySelector('%s').textContent === '%s'" % (sel, valor))
 
-  def test_fluxo_vicariato_nome_chegada_vestimenta(self):
+  def test_sem_marcar_chegada_entrega_ao_padre(self):
     a = self.celular('Ana'); n = N_PADRES
     self.assertEqual(self.numeros(a), [str(n), '0', str(n), '0'], 'aba Padres conta só padres')
     self.assertTrue(a.locator('.ck-resumo-linha').count() >= 3, 'painel por vicariato aparece sem filtro')
     a.select_option('#ck-vic', 'Vicariato Soledade')
     self.assertIn('Lucas Fernando', a.inner_text('#ck-itens'), 'quem tem dois vicariatos aparece nos dois')
-    a.fill('#ck-nome', 'lucas')
+    self.assertEqual(a.locator('text=Marcar chegada').count(), 0, 'não existe mais marcar chegada')
+    a.fill('#ck-nome', 'lucas fernando')
     self.assertEqual(a.locator('.ck-item').count(), 1)
-    self.item(a, 'Lucas').locator('[data-ck="chegou"]').click()
-    a.wait_for_function("document.querySelector('#ck-chegaram').textContent === '1'")
-    self.assertIn('Chegou', self.item(a, 'Lucas').locator('[data-ck="chegou"]').inner_text())
-    self.assertIn('Ana', self.item(a, 'Lucas').inner_text())
-    self.assertEqual(a.evaluate('window.__calls[0]'), {'id': a.evaluate("JSON.parse(localStorage.mock_padres).find(p=>p.nome.startsWith('Pe. Lucas Fernando')).id"), 'campo': 'chegou', 'valor': True, 'quem': 'Ana'})
-    self.item(a, 'Lucas').locator('[data-ck="vestimenta"]').click()
-    a.wait_for_function("document.querySelector('#ck-vestimentas').textContent === '1'")
-    # vestimenta de quem ainda não chegou marca as duas coisas
-    a.fill('#ck-nome', ''); a.select_option('#ck-vic', 'Vicariato Beberibe')
-    self.item(a, 'Hélio').locator('[data-ck="vestimenta"]').click()
-    a.wait_for_function("document.querySelector('#ck-chegaram').textContent === '2'")
-    self.assertEqual(self.numeros(a)[3], '2')
+    self.ao_padre(a, 'Lucas')
+    self.espera(a, '#ck-entregues', '1')
+    self.assertEqual(self.numeros(a), [str(n), '1', str(n - 1), '0'])
+    txt = self.item(a, 'Lucas').inner_text()
+    self.assertIn('Entregue ao padre', txt); self.assertIn('Ana', txt)
 
-  def test_varios_celulares_ao_vivo_e_concorrencia(self):
+  def test_entrega_a_terceiro_com_nome_e_observacao(self):
     a = self.celular('Ana'); b = self.celular('Bia', mobile=True)
     for p in (a, b): p.select_option('#ck-vic', 'Vicariato Beberibe')
-    self.item(a, 'João Henrique').locator('[data-ck="chegou"]').click()
-    b.wait_for_function("document.querySelector('#ck-chegaram').textContent === '1'")
-    self.assertIn('Ana', self.item(b, 'João Henrique').inner_text(), 'o outro celular vê na hora quem marcou')
-    # B não recebe o aviso a tempo e tenta marcar o mesmo padre
-    b.evaluate('window.__surdo = true')
-    self.item(a, 'Hélio').locator('[data-ck="chegou"]').click()
-    a.wait_for_function("document.querySelector('#ck-chegaram').textContent === '2'")
-    self.item(b, 'Hélio').locator('[data-ck="chegou"]').click()
-    b.wait_for_function("document.querySelector('#toast').textContent.includes('Já estava marcado')")
-    self.assertIn('por Ana', b.inner_text('#toast'))
-    b.wait_for_function("document.querySelector('#ck-chegaram').textContent === '2'")
-    self.assertEqual(a.evaluate("JSON.parse(localStorage.mock_padres).filter(p=>p.chegou_em).length"), 2)
+    # sem nome não confirma
+    self.item(a, 'Hélio').locator('[data-entregar="terceiro"]').click(); a.click('#ck-terc-ok')
+    self.assertTrue(a.locator('#ck-terc-erro').is_visible()); a.click('#ck-terc-cancelar')
+    self.assertEqual(self.numeros(a)[1], '0')
+    self.a_terceiro(a, 'Hélio', 'Maria José', 'Motorista do padre')
+    b.wait_for_function("document.querySelector('#ck-terceiros').textContent === '1' && document.querySelector('#ck-entregues').textContent === '1'")
+    txt = self.item(b, 'Hélio').inner_text()
+    self.assertIn('Entregue a terceiro: Maria José', txt); self.assertIn('Motorista do padre', txt); self.assertIn('Ana', txt)
+    b.click('.ck-filtros [data-ckfiltro="terceiros"]')
+    self.assertEqual(b.locator('.ck-item').count(), 1)
+    b.screenshot(path='/tmp/v-terceiro-celular.png')
 
-  def test_desfazer_filtros_e_inclusao(self):
-    a = self.celular('Ana')
-    a.select_option('#ck-vic', 'Vicariato Beberibe')
-    self.item(a, 'Hélio').locator('[data-ck="vestimenta"]').click()
-    a.wait_for_function("document.querySelector('#ck-vestimentas').textContent === '1'")
-    self.item(a, 'Hélio').locator('[data-ck="chegou"]').click()
-    a.locator('#ck-desfazer').wait_for()
-    self.assertIn('vestimenta também', a.inner_text('.modal'))
-    a.click('#ck-manter'); self.assertEqual(self.numeros(a)[1], '1', 'cancelar não desmarca')
-    self.item(a, 'Hélio').locator('[data-ck="chegou"]').click(); a.click('#ck-desfazer')
-    a.wait_for_function("document.querySelector('#ck-chegaram').textContent === '0' && document.querySelector('#ck-vestimentas').textContent === '0'")
-    self.item(a, 'João Henrique').locator('[data-ck="chegou"]').click()
-    a.wait_for_function("document.querySelector('#ck-chegaram').textContent === '1'")
+  def test_concorrencia_e_desfazer(self):
+    a = self.celular('Ana'); b = self.celular('Bia', mobile=True)
+    for p in (a, b): p.select_option('#ck-vic', 'Vicariato Beberibe')
+    b.evaluate('window.__surdo = true')
+    self.ao_padre(a, 'Hélio'); self.espera(a, '#ck-entregues', '1')
+    self.ao_padre(b, 'Hélio')
+    b.wait_for_function("document.querySelector('#toast').textContent.includes('Já tinha sido entregue')")
+    self.assertIn('por Ana', b.inner_text('#toast'))
+    self.assertEqual(a.evaluate("JSON.parse(localStorage.mock_padres).filter(p=>p.vestimenta_em).length"), 1)
+    # desfazer com confirmação
+    self.item(a, 'Hélio').locator('[data-desfazer]').click(); a.locator('#ck-desfazer').wait_for()
+    self.assertIn('ao padre', a.inner_text('.modal'))
+    a.click('#ck-manter'); self.assertEqual(self.numeros(a)[1], '1', 'cancelar não desfaz')
+    self.item(a, 'Hélio').locator('[data-desfazer]').click(); a.click('#ck-desfazer')
+    self.espera(a, '#ck-entregues', '0')
+    self.ao_padre(a, 'João Henrique'); self.espera(a, '#ck-entregues', '1')
     a.click('.ck-filtros [data-ckfiltro="faltam"]')
     self.assertNotIn('João Henrique', a.inner_text('#ck-itens')); self.assertIn('Hélio', a.inner_text('#ck-itens'))
-    a.click('.ck-filtros [data-ckfiltro="vestimenta"]')
+    a.click('#contador-padres [data-ckfiltro="entregues"]')
+    self.assertEqual(a.get_attribute('.ck-filtros [data-ckfiltro="entregues"]', 'aria-pressed'), 'true')
     self.assertIn('João Henrique', a.inner_text('#ck-itens'))
-    a.click('#contador-padres [data-ckfiltro="faltam"]')
-    self.assertEqual(a.get_attribute('.ck-filtros [data-ckfiltro="faltam"]', 'aria-pressed'), 'true')
-    # incluir quem não está na lista: nome repetido é avisado
+    # incluir quem não está na lista: nome repetido é avisado; o incluído não sai como entregue
     a.click('#ck-incluir'); a.fill('#ck-form-incluir input[name="nome"]', 'Pe. Hélio do Nascimento'); a.select_option('#ck-inc-vic', 'Vicariato Beberibe')
     a.click('#ck-inc-salvar'); a.locator('#ck-dup-voltar').wait_for(); a.click('#ck-dup-voltar')
     a.click('#ck-incluir'); a.fill('#ck-form-incluir input[name="nome"]', 'Pe. Visitante de Fora'); a.select_option('#ck-inc-vic', 'Vicariato Beberibe')
     a.click('#ck-inc-salvar')
     a.wait_for_function("document.querySelector('#ck-esperados').textContent === '%d'" % (N_PADRES + 1))
     self.assertIn('Incluído na hora por Ana', a.inner_text('#ck-itens'))
+    self.assertEqual(self.item(a, 'Visitante').locator('[data-entregar]').count(), 2, 'incluído ainda precisa receber a vestimenta')
 
   def test_exportacao_so_para_admin_e_celular_sem_rolagem_lateral(self):
     r = self.celular('Ana', mobile=True)
@@ -189,13 +198,11 @@ class CheckinTests(unittest.TestCase):
     self.assertEqual(r.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), True)
     r.screenshot(path='/tmp/ck-celular-painel.png', full_page=False)
     r.select_option('#ck-vic', 'Vicariato Beberibe')
-    self.item(r, 'Hélio').locator('[data-ck="chegou"]').click()
-    r.wait_for_function("document.querySelector('#ck-chegaram').textContent === '1'")
+    self.ao_padre(r, 'Hélio'); self.espera(r, '#ck-entregues', '1')
     self.assertEqual(r.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), True)
     r.screenshot(path='/tmp/ck-celular-lista.png', full_page=False)
     adm = self.celular('Alana', admin=True)
     self.assertTrue(adm.locator('#ck-exportar').is_visible())
-    adm.screenshot(path='/tmp/ck-desktop.png', full_page=False)
 
   def test_tres_abas_bispos_e_diaconos(self):
     a = self.celular('Ana'); b = self.celular('Bia', mobile=True)
@@ -204,22 +211,22 @@ class CheckinTests(unittest.TestCase):
     a.wait_for_function("document.querySelector('#ck-esperados').textContent === '%d'" % N_BISPOS)
     self.assertTrue(a.locator('#ck-campo-vic').is_hidden(), 'bispos não têm etapa de vicariato')
     self.assertIn('Mitra 58', self.item(a, 'Saburido').inner_text())
-    a.fill('#ck-nome', 'saburido'); self.item(a, 'Saburido').locator('[data-ck="vestimenta"]').click()
-    a.wait_for_function("document.querySelector('#ck-chegaram').textContent === '1' && document.querySelector('#ck-vestimentas').textContent === '1'")
+    a.fill('#ck-nome', 'saburido'); self.a_terceiro(a, 'Saburido', 'Secretário Paulo')
+    a.wait_for_function("document.querySelector('#ck-entregues').textContent === '1' && document.querySelector('#ck-terceiros').textContent === '1'")
     b.wait_for_timeout(300)
     self.assertEqual(self.numeros(b)[1], '0', 'a aba Padres do outro celular não conta o bispo')
-    b.click('[data-aba="bispos"]'); b.wait_for_function("document.querySelector('#ck-chegaram').textContent === '1'")
+    b.click('[data-aba="bispos"]'); self.espera(b, '#ck-entregues', '1')
     a.click('[data-aba="diaconos"]')
-    a.wait_for_function("document.querySelector('#ck-esperados').textContent === '0'")
+    self.espera(a, '#ck-esperados', '0')
     self.assertIn('Ainda não há diáconos', a.inner_text('#ck-itens'))
     a.click('#ck-incluir'); self.assertIn('Incluir diácono', a.inner_text('.modal'))
     a.fill('#ck-form-incluir input[name="nome"]', 'Diác. José Teste'); a.select_option('#ck-inc-vic', 'Vicariato Olinda'); a.click('#ck-inc-salvar')
-    a.wait_for_function("document.querySelector('#ck-esperados').textContent === '1' && document.querySelector('#ck-chegaram').textContent === '1'")
+    self.espera(a, '#ck-esperados', '1')
+    self.ao_padre(a, 'José Teste'); self.espera(a, '#ck-entregues', '1')
     self.assertEqual(a.evaluate("JSON.parse(localStorage.mock_padres).find(p=>p.nome==='Diác. José Teste').tipo"), 'diacono')
     a.click('[data-aba="padres"]')
     a.wait_for_function("document.querySelector('#ck-esperados').textContent === '%d'" % N_PADRES)
     self.assertEqual(a.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), True)
-    b.screenshot(path='/tmp/ck-celular-bispos.png')
 
   def test_estoque_de_casulas(self):
     adm = self.celular('Alana', admin=True); eq = self.celular('Bia', mobile=True)
@@ -232,13 +239,12 @@ class CheckinTests(unittest.TestCase):
     eq.click('[data-aba="estoque"]'); self.assertEqual(eq.locator('[data-definir]').count(), 0)
     # entrega 3 vestimentas em Beberibe (estoque 2): aviso de falta
     eq.click('[data-aba="padres"]'); eq.select_option('#ck-vic', 'Vicariato Beberibe')
-    for nome in ('Hélio', 'João Henrique'):
-      self.item(eq, nome).locator('[data-ck="vestimenta"]').click(); eq.wait_for_timeout(150)
-    eq.wait_for_function("document.querySelector('#ck-vestimentas').textContent === '2'")
+    self.ao_padre(eq, 'Hélio'); eq.wait_for_timeout(150); self.a_terceiro(eq, 'João Henrique', 'Irmã Lúcia')
+    eq.wait_for_function("document.querySelector('#ck-entregues').textContent === '2'")
     linha = adm.locator('.es-linha', has_text='Vicariato Beberibe')
     adm.wait_for_function("[...document.querySelectorAll('.es-linha')].find(l=>l.innerText.includes('Vicariato Beberibe')).querySelector('.es-disp').textContent === '0'")
     faltam = sum(1 for p in PADRES if p['tipo'] == 'padre' and p['vicariato'] == 'Vicariato Beberibe') - 2
-    self.assertIn(f'Pode faltar {faltam}' if faltam else 'Na conta certa', linha.inner_text(), 'situação = disponíveis − padres que faltam chegar')
+    self.assertIn(f'Pode faltar {faltam}' if faltam else 'Na conta certa', linha.inner_text(), 'situação = disponíveis − padres que faltam receber')
     # transferência insuficiente e depois válida, feita pela equipe; admin vê ao vivo
     eq.click('[data-aba="estoque"]'); eq.click('#es-transferir')
     eq.select_option('#es-tr-de', 'Vicariato Beberibe'); eq.select_option('#es-tr-para', 'Reserva central'); eq.fill('#es-form-tr input[name="qtd"]', '1'); eq.click('#es-tr-ok')

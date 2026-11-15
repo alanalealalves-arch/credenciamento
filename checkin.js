@@ -1,7 +1,7 @@
 'use strict';
 /* =====================================================================
    Check-in de padres e bispos
-   Fluxo: 1) vicariato  2) nome  3) "Chegou" / "Vestimenta"
+   Fluxo: 1) vicariato  2) nome  3) vestimenta entregue ao padre ou a terceiro
    Usa utilidades e estado globais de app.js ($, esc, norm, S, toast,
    abrirModal, fecharModal, comTempo, erroAmigavel, carregarXlsx, carimbo).
    ===================================================================== */
@@ -21,7 +21,7 @@ const CK = (() => {
   const linhasTipo = () => [...st.linhas.values()].filter(doTipo);
   const ui = {
     vic: $('#ck-vic'), nome: $('#ck-nome'), itens: $('#ck-itens'), info: $('#ck-info'), resumo: $('#ck-resumo'),
-    esperados: $('#ck-esperados'), chegaram: $('#ck-chegaram'), faltam: $('#ck-faltam'), vestimentas: $('#ck-vestimentas')
+    esperados: $('#ck-esperados'), entregues: $('#ck-entregues'), faltam: $('#ck-faltam'), terceiros: $('#ck-terceiros')
   };
   const LIMITE = 250;
   const fmt = n => Number(n).toLocaleString('pt-BR');
@@ -73,16 +73,16 @@ const CK = (() => {
     clearInterval(st.timer);
     st.linhas = new Map(); st.carregado = false; st.salvando.clear();
     ui.itens.replaceChildren(); ui.resumo.replaceChildren(); ui.nome.value = ''; ui.vic.value = '';
-    for (const k of ['esperados', 'chegaram', 'faltam', 'vestimentas']) ui[k].textContent = '…';
+    for (const k of ['esperados', 'entregues', 'faltam', 'terceiros']) ui[k].textContent = '…';
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.perfil) carregar(); });
   window.addEventListener('online', () => { if (S.perfil) carregar(); });
 
   /* ---------- Contagens ---------- */
   function contar(arr){
-    let chegaram = 0, vest = 0;
-    for (const r of arr) { if (r.chegou_em) chegaram++; if (r.vestimenta_em) vest++; }
-    return { esperados: arr.length, chegaram, faltam: arr.length - chegaram, vest };
+    let vest = 0, terc = 0;
+    for (const r of arr) if (r.vestimenta_em) { vest++; if (r.vestimenta_para === 'terceiro') terc++; }
+    return { esperados: arr.length, vest, faltam: arr.length - vest, terc };
   }
   function grupos(){
     const m = new Map();
@@ -101,9 +101,9 @@ const CK = (() => {
   function render(){
     const c = contar(linhasTipo());
     ui.esperados.textContent = st.carregado ? fmt(c.esperados) : '…';
-    ui.chegaram.textContent = st.carregado ? fmt(c.chegaram) : '…';
+    ui.entregues.textContent = st.carregado ? fmt(c.vest) : '…';
     ui.faltam.textContent = st.carregado ? fmt(c.faltam) : '…';
-    ui.vestimentas.textContent = st.carregado ? fmt(c.vest) : '…';
+    ui.terceiros.textContent = st.carregado ? fmt(c.terc) : '…';
     renderSelect();
     if (window.CT) CT.render();
     if ($('#aba-checkin').hidden) return;
@@ -127,9 +127,9 @@ const CK = (() => {
     let arr = linhasTipo().filter(r => doVicariato(r, v2));
     const base = arr;
     if (q.length) arr = arr.filter(r => { const n = norm(r.nome + ' ' + (r.paroquia || '')); return q.every(x => n.includes(x)); });
-    if (st.filtro === 'faltam') arr = arr.filter(r => !r.chegou_em);
-    else if (st.filtro === 'chegaram') arr = arr.filter(r => r.chegou_em);
-    else if (st.filtro === 'vestimenta') arr = arr.filter(r => r.chegou_em && !r.vestimenta_em);
+    if (st.filtro === 'faltam') arr = arr.filter(r => !r.vestimenta_em);
+    else if (st.filtro === 'entregues') arr = arr.filter(r => r.vestimenta_em);
+    else if (st.filtro === 'terceiros') arr = arr.filter(r => r.vestimenta_em && r.vestimenta_para === 'terceiro');
     arr.sort((a, b) => semTitulo(a.nome).localeCompare(semTitulo(b.nome), 'pt-BR'));
     return { arr, base, v: v2, q };
   }
@@ -140,14 +140,14 @@ const CK = (() => {
     const { arr, base, v, q } = filtrar();
     const cv = contar(base);
     ui.info.textContent = v
-      ? `${v}: chegaram ${fmt(cv.chegaram)} de ${fmt(cv.esperados)} · faltam ${fmt(cv.faltam)}`
-      : `Chegaram ${fmt(cv.chegaram)} de ${fmt(cv.esperados)} · faltam ${fmt(cv.faltam)}`;
+      ? `${v}: entregues ${fmt(cv.vest)} de ${fmt(cv.esperados)} · faltam ${fmt(cv.faltam)}`
+      : `Entregues ${fmt(cv.vest)} de ${fmt(cv.esperados)} · faltam ${fmt(cv.faltam)}`;
 
     // Sem vicariato, sem nome e sem filtro: mostra o painel por vicariato
     if (T.vic && !v && !q.length && st.filtro === 'todos') {
       ui.itens.innerHTML = '<div class="vazio-lista">Escolha o vicariato ou digite o nome para fazer o check-in.</div>';
-      ui.resumo.innerHTML = `<div class="ck-resumo"><div class="ck-resumo-cab"><span>VICARIATO</span><span>ESPERADOS</span><span>CHEGARAM</span><span>FALTAM</span><span>VESTIMENTAS</span></div>` +
-        grupos().map(([g, a]) => { const c = contar(a); return `<button type="button" class="ck-resumo-linha${c.faltam ? '' : ' completo'}" data-vic="${esc(g)}"><span class="ck-rv">${esc(g)}</span><span data-r="Esperados">${fmt(c.esperados)}</span><span data-r="Chegaram">${fmt(c.chegaram)}</span><span data-r="Faltam" class="ck-rf">${fmt(c.faltam)}</span><span data-r="Vestimentas">${fmt(c.vest)}</span></button>`; }).join('') + '</div>';
+      ui.resumo.innerHTML = `<div class="ck-resumo"><div class="ck-resumo-cab"><span>VICARIATO</span><span>ESPERADOS</span><span>ENTREGUES</span><span>FALTAM</span><span>A TERCEIROS</span></div>` +
+        grupos().map(([g, a]) => { const c = contar(a); return `<button type="button" class="ck-resumo-linha${c.faltam ? '' : ' completo'}" data-vic="${esc(g)}"><span class="ck-rv">${esc(g)}</span><span data-r="Esperados">${fmt(c.esperados)}</span><span data-r="Entregues">${fmt(c.vest)}</span><span data-r="Faltam" class="ck-rf">${fmt(c.faltam)}</span><span data-r="A terceiros">${fmt(c.terc)}</span></button>`; }).join('') + '</div>';
       return;
     }
     ui.resumo.replaceChildren();
@@ -158,10 +158,11 @@ const CK = (() => {
     const vis = arr.slice(0, LIMITE);
     let h = '';
     for (const r of vis) {
-      const sChe = st.salvando.has(r.id + ':chegou'), sVes = st.salvando.has(r.id + ':vestimenta');
+      const sVes = st.salvando.has(r.id + ':vestimenta');
+      const terc = r.vestimenta_para === 'terceiro';
       const det = [r.funcao, r.paroquia].filter(Boolean).join(' · ');
       const vics = [r.vicariato, r.vicariato2].filter(Boolean).join(' · ');
-      h += `<div class="ck-item${r.chegou_em ? ' chegou' : ''}${r.vestimenta_em ? ' vestido' : ''}">
+      h += `<div class="ck-item${r.vestimenta_em ? (terc ? ' vestido' : ' chegou') : ''}">
         <div class="ck-dados">
           <b>${esc(r.nome)}</b>
           ${det ? `<small>${esc(det)}</small>` : ''}
@@ -170,12 +171,14 @@ const CK = (() => {
           ${r.incluido_na_hora ? `<span class="ck-tag aviso">Incluído na hora${r.incluido_por ? ' por ' + esc(r.incluido_por) : ''}</span>` : ''}
         </div>
         <div class="ck-botoes">
-          <button type="button" class="ck-btn chegada${r.chegou_em ? ' on' : ''}" data-ck="chegou" data-id="${r.id}" ${sChe ? 'disabled' : ''}>
-            ${sChe ? 'Salvando…' : r.chegou_em ? `✓ Chegou <small>${esc(hora(r.chegou_em))}${r.chegou_por ? ' · ' + esc(r.chegou_por) : ''}</small>` : 'Marcar chegada'}
-          </button>
-          <button type="button" class="ck-btn vest${r.vestimenta_em ? ' on' : ''}" data-ck="vestimenta" data-id="${r.id}" ${sVes ? 'disabled' : ''}>
-            ${sVes ? 'Salvando…' : r.vestimenta_em ? `✓ Vestimenta <small>${esc(hora(r.vestimenta_em))}${r.vestimenta_por ? ' · ' + esc(r.vestimenta_por) : ''}</small>` : 'Entregar vestimenta'}
-          </button>
+          ${sVes ? `<button type="button" class="ck-btn ck-largo" disabled>Salvando…</button>`
+            : r.vestimenta_em
+              ? `<button type="button" class="ck-btn ck-largo on ${terc ? 'terc' : 'padre'}" data-desfazer="${r.id}">
+                   ✓ ${terc ? `Entregue a terceiro: <b>${esc(r.vestimenta_terceiro || '')}</b>` : 'Entregue ao padre'}
+                   <small>${esc(hora(r.vestimenta_em))}${r.vestimenta_por ? ' · ' + esc(r.vestimenta_por) : ''}${r.vestimenta_obs ? ' · ' + esc(r.vestimenta_obs) : ''}</small>
+                 </button>`
+              : `<button type="button" class="ck-btn chegada" data-entregar="padre" data-id="${r.id}">Entregue ao padre</button>
+                 <button type="button" class="ck-btn vest" data-entregar="terceiro" data-id="${r.id}">Entregue a terceiro</button>`}
           ${window.CT ? (() => { const n = CT.guardadosDe(r.id); return `<button type="button" class="ck-pert${n ? ' tem' : ''}" data-pertences="${r.id}">🎒 Pertences${n ? ` · ${n} guardado${n > 1 ? 's' : ''}` : ''}</button>`; })() : ''}
         </div>
       </div>`;
@@ -201,48 +204,67 @@ const CK = (() => {
     ui.vic.value = b.dataset.vic; renderLista(); ui.nome.focus();
   });
 
-  /* ---------- Marcar / desmarcar ---------- */
-  async function marcar(id, campo, valor){
-    const chave = id + ':' + campo;
-    if (st.salvando.has(chave) || !S.perfil) return;
+  /* ---------- Entregar / desfazer vestimenta ---------- */
+  async function entregar(id, valor, para, terceiro, obs){
+    const chave = id + ':vestimenta';
+    if (st.salvando.has(chave) || !S.perfil) return false;
     const geracao = st.geracao;
     st.salvando.add(chave); renderLista();
     try {
-      const res = await comTempo(S.api.marcarPadre(id, campo, valor, S.recep));
-      if (geracao !== st.geracao) return;
+      const res = await comTempo(S.api.rpc('entregar_vestimenta', { p_id: id, p_valor: valor, p_para: para || null, p_terceiro: terceiro || null, p_obs: obs || null, p_recepcionista: S.recep }));
+      if (geracao !== st.geracao) return false;
       const r = res && res.registro;
       if (r && r.id != null) st.linhas.set(r.id, r);
       if (res && res.status === 'ja') {
-        const quando = campo === 'chegou' ? r.chegou_em : r.vestimenta_em, quem = campo === 'chegou' ? r.chegou_por : r.vestimenta_por;
-        toast(`Já estava marcado às ${hora(quando)}${quem ? ' por ' + quem : ''}`);
+        toast(`Já tinha sido entregue às ${hora(r.vestimenta_em)}${r.vestimenta_por ? ' por ' + r.vestimenta_por : ''}${r.vestimenta_para === 'terceiro' ? ' (a ' + (r.vestimenta_terceiro || 'terceiro') + ')' : ''}`);
       } else if (valor) {
-        toast(campo === 'chegou' ? `✓ Chegada: ${r.nome}` : `✓ Vestimenta entregue: ${r.nome}`);
-        if (campo === 'vestimenta' && window.CT) setTimeout(() => CT.avisarEstoque(r), 1800);
-      }
-      else toast('Marcação desfeita');
+        toast(para === 'terceiro' ? `✓ Vestimenta de ${r.nome} entregue a ${r.vestimenta_terceiro}` : `✓ Vestimenta entregue: ${r.nome}`);
+        if (window.CT) setTimeout(() => CT.avisarEstoque(r), 1800);
+      } else toast('Entrega desfeita');
+      return true;
     } catch (e) {
       if (geracao === st.geracao) toast('Não foi possível salvar: ' + erroAmigavel(e), true);
+      return false;
     } finally {
       if (geracao === st.geracao) { st.salvando.delete(chave); render(); }
     }
   }
-  function confirmarDesfazer(r, campo){
-    const txt = campo === 'chegou'
-      ? `Desmarcar a chegada de <b>${esc(r.nome)}</b>?${r.vestimenta_em ? '<br>A entrega da vestimenta também será desmarcada.' : ''}`
-      : `Desmarcar a entrega da vestimenta de <b>${esc(r.nome)}</b>?`;
-    const m = abrirModal(`<h2>Desfazer marcação?</h2><p>${txt}</p>
-      <div class="botoes"><button class="btn perigo" id="ck-desfazer" type="button">DESMARCAR</button><button class="btn secundario" id="ck-manter" type="button">Manter como está</button></div>`);
+  function aTerceiro(r){
+    const m = abrirModal(`<h2>Entregue a terceiro</h2><p>Vestimenta de <b>${esc(r.nome)}</b></p>
+      <form id="ck-form-terc" novalidate>
+        <div id="ck-terc-erro" class="alerta erro" hidden></div>
+        <div class="campo"><label>Nome de quem retirou</label><input name="quem" maxlength="150" autocapitalize="words"></div>
+        <div class="campo"><label>Observação (opcional)</label><input name="obs" maxlength="300" placeholder="Ex.: motorista do padre, telefone…"></div>
+        <div class="botoes"><button class="btn" type="submit" id="ck-terc-ok">CONFIRMAR ENTREGA</button><button class="btn secundario" type="button" id="ck-terc-cancelar">Cancelar</button></div>
+      </form>`);
+    const f = $('#ck-form-terc', m);
+    $('#ck-terc-cancelar', m).onclick = fecharModal;
+    f.quem.focus();
+    f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const quem = limparNome(f.quem.value), erro = $('#ck-terc-erro', m);
+      if (quem.length < 2) { erro.textContent = 'Informe o nome de quem retirou.'; erro.hidden = false; f.quem.focus(); return; }
+      fecharModal();
+      await entregar(r.id, true, 'terceiro', quem, limparNome(f.obs.value));
+    });
+  }
+  function confirmarDesfazer(r){
+    const terc = r.vestimenta_para === 'terceiro';
+    const m = abrirModal(`<h2>Desfazer entrega?</h2>
+      <p>Vestimenta de <b>${esc(r.nome)}</b> entregue ${terc ? `a <b>${esc(r.vestimenta_terceiro || '')}</b>` : 'ao padre'} às ${esc(hora(r.vestimenta_em))}${r.vestimenta_por ? ' por ' + esc(r.vestimenta_por) : ''}.${r.vestimenta_obs ? `<br><small>Obs.: ${esc(r.vestimenta_obs)}</small>` : ''}</p>
+      <div class="botoes"><button class="btn perigo" id="ck-desfazer" type="button">DESFAZER ENTREGA</button><button class="btn secundario" id="ck-manter" type="button">Manter como está</button></div>`);
     $('#ck-manter', m).onclick = fecharModal;
     $('#ck-manter', m).focus();
-    $('#ck-desfazer', m).onclick = () => { fecharModal(); marcar(r.id, campo, false); };
+    $('#ck-desfazer', m).onclick = () => { fecharModal(); entregar(r.id, false); };
   }
   ui.itens.addEventListener('click', e => {
     const pb = e.target.closest('[data-pertences]'); if (pb) { if (window.CT) CT.abrirPertences(+pb.dataset.pertences); return; }
-    const b = e.target.closest('[data-ck]'); if (!b || b.disabled) return;
+    const d = e.target.closest('[data-desfazer]');
+    if (d) { const r = st.linhas.get(+d.dataset.desfazer); if (r) confirmarDesfazer(r); return; }
+    const b = e.target.closest('[data-entregar]'); if (!b || b.disabled) return;
     const r = st.linhas.get(+b.dataset.id); if (!r) return;
-    const campo = b.dataset.ck;
-    const marcado = campo === 'chegou' ? !!r.chegou_em : !!r.vestimenta_em;
-    if (marcado) confirmarDesfazer(r, campo); else marcar(r.id, campo, true);
+    if (r.vestimenta_em) { confirmarDesfazer(r); return; }
+    if (b.dataset.entregar === 'terceiro') aTerceiro(r); else entregar(r.id, true, 'padre');
   });
 
   /* ---------- Incluir quem não está na lista ---------- */
@@ -253,7 +275,7 @@ const CK = (() => {
     (typeof PAROQUIAS !== 'undefined' ? PAROQUIAS : []).forEach(p => { if (p[1] !== 'Religiosos') nomesVic.add(p[1]); });
     const opcoes = [...nomesVic].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(g => `<option value="${esc(g)}"${g === ui.vic.value ? ' selected' : ''}>${esc(g)}</option>`).join('');
     const m = abrirModal(`<h2>Incluir ${T.um}</h2>
-      <p>Para quem chegou e não está na lista. Já entra como <b>chegou</b>.</p>
+      <p>Para quem não está na lista. Depois de incluir, registre a entrega da vestimenta no cartão.</p>
       <form id="ck-form-incluir" novalidate>
         <div id="ck-inc-erro" class="alerta erro" hidden></div>
         <div class="campo"><label>Nome (com título, ex.: Pe. João Silva)</label><input name="nome" maxlength="150" autocapitalize="words"></div>
@@ -278,7 +300,7 @@ const CK = (() => {
     try {
       const res = await comTempo(S.api.incluirPadre({ ...dados, recepcionista: S.recep, forcar }));
       if (res && res.status === 'duplicado') {
-        const lista = (res.duplicados || []).map(d => `<div class="dup"><b>${esc(d.nome)}</b>${esc(d.vicariato)}${d.chegou_em ? `<br><small>Chegou às ${esc(hora(d.chegou_em))}</small>` : ''}</div>`).join('');
+        const lista = (res.duplicados || []).map(d => `<div class="dup"><b>${esc(d.nome)}</b>${esc(d.vicariato)}${d.vestimenta_em ? `<br><small>Vestimenta entregue às ${esc(hora(d.vestimenta_em))}</small>` : ''}</div>`).join('');
         const m2 = abrirModal(`<h2>Esse nome já está na lista</h2><p>Confira se não é a mesma pessoa:</p>${lista}
           <div class="botoes"><button class="btn secundario" id="ck-dup-voltar" type="button">É a mesma pessoa — voltar</button><button class="btn" id="ck-dup-forcar" type="button">É outra pessoa — incluir</button></div>`);
         $('#ck-dup-voltar', m2).onclick = () => { fecharModal(); ui.vic.value = ''; ui.nome.value = dados.nome; definirFiltro('todos'); };
@@ -305,22 +327,22 @@ const CK = (() => {
       const [rows] = await Promise.all([comTempo(S.api.padres(), 60000), carregarXlsx()]);
       rows.sort((a, b) => a.vicariato.localeCompare(b.vicariato, 'pt-BR') || semTitulo(a.nome).localeCompare(semTitulo(b.nome), 'pt-BR'));
       const dataHora = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '';
-      const cab = ['Vicariato', 'Nome', 'Função', 'Paróquia', 'Mitra', 'Chegou', 'Horário de chegada', 'Chegada marcada por', 'Vestimenta', 'Horário da vestimenta', 'Vestimenta entregue por', 'Incluído na hora'];
+      const cab = ['Vicariato', 'Nome', 'Função', 'Paróquia', 'Mitra', 'Vestimenta entregue', 'Entregue a', 'Nome de quem retirou', 'Observação', 'Horário', 'Registrado por', 'Incluído na hora'];
       const wb = XLSX.utils.book_new();
-      const resumo = [['Grupo', 'Esperados', 'Chegaram', 'Faltam', 'Vestimentas']];
+      const resumo = [['Grupo', 'Esperados', 'Entregues', 'Faltam', 'A terceiros']];
       for (const T of Object.values(TIPOS)) {
         const doT = rows.filter(r => (r.tipo || 'padre') === T.tipo);
         const linhas = doT.map(r => [[r.vicariato, r.vicariato2].filter(Boolean).join(' / '), r.nome, r.funcao || '', r.paroquia || '', r.mitra || '',
-          r.chegou_em ? 'Sim' : 'Não', dataHora(r.chegou_em), r.chegou_por || '', r.vestimenta_em ? 'Sim' : 'Não', dataHora(r.vestimenta_em), r.vestimenta_por || '', r.incluido_na_hora ? 'Sim' : '']);
+          r.vestimenta_em ? 'Sim' : 'Não', r.vestimenta_em ? (r.vestimenta_para === 'terceiro' ? 'Terceiro' : 'Padre') : '', r.vestimenta_terceiro || '', r.vestimenta_obs || '', dataHora(r.vestimenta_em), r.vestimenta_por || '', r.incluido_na_hora ? 'Sim' : '']);
         const ws = XLSX.utils.aoa_to_sheet([cab, ...linhas]);
         ws['!cols'] = [{ wch: 26 }, { wch: 44 }, { wch: 20 }, { wch: 50 }, { wch: 8 }, { wch: 8 }, { wch: 20 }, { wch: 18 }, { wch: 10 }, { wch: 20 }, { wch: 18 }, { wch: 10 }];
         ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(linhas.length, 1), c: cab.length - 1 } }) };
         XLSX.utils.book_append_sheet(wb, ws, T.varios[0].toUpperCase() + T.varios.slice(1));
         const ct = contar(doT);
-        resumo.push([T.varios.toUpperCase(), ct.esperados, ct.chegaram, ct.faltam, ct.vest]);
+        resumo.push([T.varios.toUpperCase(), ct.esperados, ct.vest, ct.faltam, ct.terc]);
         if (T.vic) {
           const m = new Map(); for (const r of doT) for (const v of [r.vicariato, r.vicariato2]) if (v) { if (!m.has(v)) m.set(v, []); m.get(v).push(r); }
-          [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).forEach(([v, a]) => { const c = contar(a); resumo.push(['   ' + v, c.esperados, c.chegaram, c.faltam, c.vest]); });
+          [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).forEach(([v, a]) => { const c = contar(a); resumo.push(['   ' + v, c.esperados, c.vest, c.faltam, c.terc]); });
         }
       }
       const ws2 = XLSX.utils.aoa_to_sheet(resumo);

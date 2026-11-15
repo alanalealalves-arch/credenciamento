@@ -633,3 +633,82 @@ create policy "pertences fotos: equipe e admin enviam" on storage.objects
   for insert to authenticated with check (bucket_id = 'pertences' and public.papel() is not null);
 create policy "pertences fotos: admin apaga" on storage.objects
   for delete to authenticated using (bucket_id = 'pertences' and public.papel() = 'admin');
+
+-- =====================================================================
+-- 11) Vestimenta entregue ao padre ou a terceiro (nome + observação)
+--     Substitui a marcação de presença no app. Aditivo: marcar_padre
+--     continua funcionando para quem estiver com a versão anterior.
+-- =====================================================================
+alter table public.padres add column if not exists vestimenta_para text;
+alter table public.padres add column if not exists vestimenta_terceiro text;
+alter table public.padres add column if not exists vestimenta_obs text;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'padres_vestimenta_para_check') then
+    alter table public.padres add constraint padres_vestimenta_para_check
+      check (vestimenta_para is null or vestimenta_para in ('padre', 'terceiro'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'padres_vestimenta_terceiro_check') then
+    alter table public.padres add constraint padres_vestimenta_terceiro_check
+      check ((vestimenta_terceiro is null or char_length(vestimenta_terceiro) <= 150)
+         and (vestimenta_obs is null or char_length(vestimenta_obs) <= 300));
+  end if;
+end $$;
+
+create or replace function public.entregar_vestimenta(
+  p_id            bigint,
+  p_valor         boolean,
+  p_para          text,
+  p_terceiro      text,
+  p_obs           text,
+  p_recepcionista text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_row      public.padres;
+  v_quem     text := left(nullif(trim(coalesce(p_recepcionista, '')), ''), 60);
+  v_para     text := coalesce(nullif(p_para, ''), 'padre');
+  v_terceiro text := nullif(trim(regexp_replace(coalesce(p_terceiro, ''), '\s+', ' ', 'g')), '');
+  v_obs      text := nullif(trim(coalesce(p_obs, '')), '');
+begin
+  if public.papel() is null then
+    raise exception 'Acesso negado' using errcode = '42501';
+  end if;
+  if p_valor is null or v_para not in ('padre', 'terceiro') then
+    raise exception 'Operação inválida' using errcode = '22023';
+  end if;
+  select * into v_row from public.padres where id = p_id for update;
+  if not found then
+    raise exception 'Padre não encontrado' using errcode = 'P0002';
+  end if;
+
+  if p_valor then
+    if v_row.vestimenta_em is not null then
+      return jsonb_build_object('status', 'ja', 'registro', to_jsonb(v_row));
+    end if;
+    if v_para = 'terceiro' and char_length(coalesce(v_terceiro, '')) < 2 then
+      raise exception 'Informe o nome de quem retirou' using errcode = '23514';
+    end if;
+    update public.padres
+       set vestimenta_em = now(), vestimenta_por = v_quem, vestimenta_para = v_para,
+           vestimenta_terceiro = case when v_para = 'terceiro' then left(v_terceiro, 150) end,
+           vestimenta_obs = left(v_obs, 300),
+           chegou_em  = coalesce(chegou_em, now()),
+           chegou_por = case when chegou_em is null then v_quem else chegou_por end
+     where id = p_id returning * into v_row;
+  else
+    update public.padres
+       set vestimenta_em = null, vestimenta_por = null, vestimenta_para = null,
+           vestimenta_terceiro = null, vestimenta_obs = null,
+           chegou_em = null, chegou_por = null
+     where id = p_id returning * into v_row;
+  end if;
+  return jsonb_build_object('status', 'ok', 'registro', to_jsonb(v_row));
+end;
+$$;
+revoke all on function public.entregar_vestimenta(bigint, boolean, text, text, text, text) from public, anon;
+grant execute on function public.entregar_vestimenta(bigint, boolean, text, text, text, text) to authenticated;
