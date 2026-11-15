@@ -55,11 +55,11 @@ const CT = (() => {
   }
   function linhasEstoque(){
     const sal = saldos(), por = new Map();
-    const pega = l => { if (!por.has(l)) por.set(l, { local: l, esperados: 0, chegaram: 0, faltam: 0, casulas: 0, entregues: 0 }); return por.get(l); };
+    const pega = l => { if (!por.has(l)) por.set(l, { local: l, esperados: 0, faltam: 0, casulas: 0, entregues: 0, congresso: 0 }); return por.get(l); };
     for (const r of padres()) {
       if ((r.tipo || 'padre') !== 'padre') continue;
       const x = pega(r.vicariato); x.esperados++;
-      if (r.vestimenta_em) x.entregues++; else x.faltam++;
+      if (r.vestimenta_em) { if (r.casula_congresso) { x.congresso++; } else x.entregues++; } else x.faltam++;
     }
     pega(RESERVA);
     for (const [l, q] of sal) pega(l).casulas = q;
@@ -70,10 +70,11 @@ const CT = (() => {
   function renderEstoque(){
     if (!visivel('aba-estoque')) return;
     const L = linhasEstoque();
-    const tot = L.reduce((a, x) => ({ casulas: a.casulas + x.casulas, entregues: a.entregues + x.entregues, disp: a.disp + x.disp, faltam: a.faltam + x.faltam }), { casulas: 0, entregues: 0, disp: 0, faltam: 0 });
+    const tot = L.reduce((a, x) => ({ casulas: a.casulas + x.casulas, entregues: a.entregues + x.entregues, disp: a.disp + x.disp, faltam: a.faltam + x.faltam, congresso: a.congresso + x.congresso }), { casulas: 0, entregues: 0, disp: 0, faltam: 0, congresso: 0 });
     const admin = S.perfil === 'admin';
-    $('#es-numeros').innerHTML = [['CASULAS', tot.casulas], ['ENTREGUES', tot.entregues], ['DISPONÍVEIS', tot.disp], ['FALTAM RECEBER', tot.faltam]]
-      .map(([l, n]) => `<div class="es-num"><span>${l}</span><strong>${st.carregado ? fmt(n) : '…'}</strong></div>`).join('');
+    $('#es-numeros').innerHTML = [['CASULAS COMUNS', tot.casulas], ['COMUNS ENTREGUES', tot.entregues], ['DISPONÍVEIS', tot.disp], ['FALTAM RECEBER', tot.faltam]]
+      .map(([l, n]) => `<div class="es-num"><span>${l}</span><strong>${st.carregado ? fmt(n) : '…'}</strong></div>`).join('') +
+      `<div class="es-num es-cong"><span>CASULAS CONGRESSO ENTREGUES</span><strong>${st.carregado ? fmt(tot.congresso) : '…'}</strong></div>`;
     const sit = x => {
       if (x.local === RESERVA) return `<span class="es-sit reserva">Reserva</span>`;
       if (!x.temEstoque && !x.entregues) return `<span class="es-sit neutro">Sem estoque definido</span>`;

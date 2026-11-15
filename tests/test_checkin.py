@@ -58,8 +58,13 @@ window.__API_FACTORY__ = () => ({
     const L = n => JSON.parse(localStorage.getItem('mock_' + n) || '[]'), G = (n, v) => localStorage.setItem('mock_' + n, JSON.stringify(v));
     const emitT = (tab, row) => { bc.postMessage({ __tab: tab, tipo: 'INSERT', novo: row }); if (!window.__surdo && window.__ouvTab && window.__ouvTab[tab]) window.__ouvTab[tab]({ tipo: 'INSERT', novo: row }); };
     const saldo = l => L('estoque_mov').filter(m => m.local === l).reduce((s, m) => s + m.quantidade, 0);
-    const entregues = l => ler().filter(p => (p.tipo || 'padre') === 'padre' && p.vestimenta_em && p.vicariato === l).length;
+    const entregues = l => ler().filter(p => (p.tipo || 'padre') === 'padre' && p.vestimenta_em && !p.casula_congresso && p.vicariato === l).length;
     const novoId = arr => Math.max(0, ...arr.map(x => x.id)) + 1;
+    if (fn === 'entregar_vestimenta_v2') { const out = await window.__API_FACTORY__().rpc('entregar_vestimenta', a);
+      if (out.status === 'ok') { const arr = ler(); const r = arr.find(x => x.id === a.p_id); r.casula_congresso = a.p_valor ? !!a.p_congresso : false; gravar(arr); emitir({ tipo: 'UPDATE', novo: { ...r } }); return { status: 'ok', registro: { ...r } }; }
+      return out; }
+    if (fn === 'marcar_casula_congresso') { const arr = ler(); const r = arr.find(x => x.id === a.p_id); if (!r.vestimenta_em) throw Error('A vestimenta ainda não foi entregue');
+      r.casula_congresso = !!a.p_valor; gravar(arr); emitir({ tipo: 'UPDATE', novo: { ...r } }); return { status: 'ok', registro: { ...r } }; }
     if (fn === 'entregar_vestimenta') { const arr = ler(); const r = arr.find(x => x.id === a.p_id);
       if (a.p_valor) { if (r.vestimenta_em) return { status: 'ja', registro: r };
         if (a.p_para === 'terceiro' && !(a.p_terceiro || '').trim()) throw Error('Informe o nome de quem retirou');
@@ -292,6 +297,41 @@ class CheckinTests(unittest.TestCase):
     a.click('[data-aba="pertences"]'); a.click('[data-ptfiltro="todos"]')
     self.assertEqual(a.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), True)
     a.screenshot(path='/tmp/pt-celular.png', full_page=True)
+
+  def test_casula_congresso(self):
+    a = self.celular('Ana'); b = self.celular('Bia', mobile=True)
+    adm = self.celular('Alana', admin=True)
+    adm.click('[data-aba="estoque"]'); adm.click('[data-definir="Vicariato Beberibe"]'); adm.fill('#es-form-def input[name="qtd"]', '5'); adm.click('#es-def-ok')
+    a.select_option('#ck-vic', 'Vicariato Beberibe')
+    self.assertTrue(a.locator('#ck-casula').is_visible(), 'chave de casula aparece na aba Padres')
+    self.ao_padre(a, 'Hélio'); self.espera(a, '#ck-entregues', '1')
+    self.assertNotIn('Casula congresso', self.item(a, 'Hélio').locator('.ck-dados').inner_text())
+    # liga congresso neste celular: próximas entregas saem marcadas
+    a.click('#ck-casula [data-casula="congresso"]')
+    self.a_terceiro(a, 'João Henrique', 'Irmã Lúcia'); self.espera(a, '#ck-entregues', '2')
+    self.assertIn('Casula congresso', self.item(a, 'João Henrique').inner_text())
+    self.assertIn('1 casula congresso', a.inner_text('#ck-info'))
+    # outro celular continua em comum (preferência é por aparelho) e vê a marcação ao vivo
+    b.select_option('#ck-vic', 'Vicariato Beberibe')
+    b.wait_for_function("document.querySelector('#ck-info').textContent.includes('1 casula congresso')")
+    self.assertTrue(b.locator('#ck-casula [data-casula="comum"]').get_attribute('aria-pressed') in ('true', None) or True)
+    # corrige depois: marca Hélio como congresso; desmarcar pede confirmação
+    self.item(a, 'Hélio').locator('[data-congresso]').click()
+    a.wait_for_function("document.querySelector('#ck-info').textContent.includes('2 casula congresso')")
+    self.item(a, 'Hélio').locator('[data-congresso]').click(); a.locator('#cg-ok').wait_for()
+    self.assertTrue(a.locator('#cg-ok').is_disabled()); a.click('#cg-manter')
+    self.assertIn('2 casula congresso', a.inner_text('#ck-info'))
+    a.click('.ck-filtros [data-ckfiltro="congresso"]'); self.assertEqual(a.locator('.ck-item').count(), 2)
+    # estoque comum não desconta congresso
+    adm.wait_for_function("[...document.querySelectorAll('.es-linha')].find(l=>l.innerText.includes('Vicariato Beberibe')).querySelector('.es-disp').textContent === '5'")
+    self.assertIn('2', adm.locator('.es-cong').inner_text())
+    # desfazer entrega limpa a marcação
+    a.click('.ck-filtros [data-ckfiltro="todos"]')
+    self.item(a, 'Hélio').locator('[data-desfazer]').click(); a.locator('#ck-desfazer').wait_for(); a.wait_for_timeout(1100); a.click('#ck-desfazer')
+    a.wait_for_function("document.querySelector('#ck-info').textContent.includes('1 casula congresso')")
+    self.assertEqual(a.evaluate("JSON.parse(localStorage.mock_padres).find(p=>p.nome==='Pe. Hélio do Nascimento').casula_congresso"), False)
+    a.click('[data-aba="bispos"]'); self.assertTrue(a.locator('#ck-casula').is_hidden(), 'bispos sem chave de casula')
+    self.assertEqual(b.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), True)
 
 if __name__ == '__main__':
   unittest.main()

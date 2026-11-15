@@ -80,9 +80,9 @@ const CK = (() => {
 
   /* ---------- Contagens ---------- */
   function contar(arr){
-    let vest = 0, terc = 0;
-    for (const r of arr) if (r.vestimenta_em) { vest++; if (r.vestimenta_para === 'terceiro') terc++; }
-    return { esperados: arr.length, vest, faltam: arr.length - vest, terc };
+    let vest = 0, terc = 0, cong = 0;
+    for (const r of arr) if (r.vestimenta_em) { vest++; if (r.vestimenta_para === 'terceiro') terc++; if (r.casula_congresso) cong++; }
+    return { esperados: arr.length, vest, faltam: arr.length - vest, terc, cong };
   }
   function grupos(){
     const m = new Map();
@@ -130,6 +130,7 @@ const CK = (() => {
     if (st.filtro === 'faltam') arr = arr.filter(r => !r.vestimenta_em);
     else if (st.filtro === 'entregues') arr = arr.filter(r => r.vestimenta_em);
     else if (st.filtro === 'terceiros') arr = arr.filter(r => r.vestimenta_em && r.vestimenta_para === 'terceiro');
+    else if (st.filtro === 'congresso') arr = arr.filter(r => r.vestimenta_em && r.casula_congresso);
     arr.sort((a, b) => semTitulo(a.nome).localeCompare(semTitulo(b.nome), 'pt-BR'));
     return { arr, base, v: v2, q };
   }
@@ -140,8 +141,8 @@ const CK = (() => {
     const { arr, base, v, q } = filtrar();
     const cv = contar(base);
     ui.info.textContent = v
-      ? `${v}: entregues ${fmt(cv.vest)} de ${fmt(cv.esperados)} · faltam ${fmt(cv.faltam)}`
-      : `Entregues ${fmt(cv.vest)} de ${fmt(cv.esperados)} · faltam ${fmt(cv.faltam)}`;
+      ? `${v}: entregues ${fmt(cv.vest)} de ${fmt(cv.esperados)} · faltam ${fmt(cv.faltam)}${cv.cong ? ` · ${fmt(cv.cong)} casula congresso` : ''}`
+      : `Entregues ${fmt(cv.vest)} de ${fmt(cv.esperados)} · faltam ${fmt(cv.faltam)}${cv.cong ? ` · ${fmt(cv.cong)} casula congresso` : ''}`;
 
     // Sem vicariato, sem nome e sem filtro: mostra o painel por vicariato
     if (T.vic && !v && !q.length && st.filtro === 'todos') {
@@ -169,6 +170,7 @@ const CK = (() => {
           ${!v && T.vic ? `<small class="ck-vic-item">${esc(vics)}</small>` : ''}
           ${r.mitra ? `<span class="ck-tag">Mitra ${esc(r.mitra)}</span>` : ''}
           ${r.incluido_na_hora ? `<span class="ck-tag aviso">Incluído na hora${r.incluido_por ? ' por ' + esc(r.incluido_por) : ''}</span>` : ''}
+          ${r.vestimenta_em && r.casula_congresso ? `<span class="ck-tag congresso">Casula congresso</span>` : ''}
         </div>
         <div class="ck-botoes">
           ${sVes ? `<button type="button" class="ck-btn ck-largo" disabled>Salvando…</button>`
@@ -176,7 +178,8 @@ const CK = (() => {
               ? `<button type="button" class="ck-btn ck-largo on ${terc ? 'terc' : 'padre'}" data-desfazer="${r.id}">
                    ✓ ${terc ? `Entregue a terceiro: <b>${esc(r.vestimenta_terceiro || '')}</b>` : 'Entregue ao padre'}
                    <small>${esc(hora(r.vestimenta_em))}${r.vestimenta_por ? ' · ' + esc(r.vestimenta_por) : ''}${r.vestimenta_obs ? ' · ' + esc(r.vestimenta_obs) : ''}</small>
-                 </button>`
+                 </button>
+                 ${T.tipo === 'padre' ? `<button type="button" class="ck-cong${r.casula_congresso ? ' on' : ''}" data-congresso="${r.id}" ${st.salvando.has(r.id + ':congresso') ? 'disabled' : ''}>${r.casula_congresso ? '✓ Casula congresso · desmarcar' : 'Marcar como casula congresso'}</button>` : ''}`
               : `<button type="button" class="ck-btn chegada" data-entregar="padre" data-id="${r.id}">Entregue ao padre</button>
                  <button type="button" class="ck-btn vest" data-entregar="terceiro" data-id="${r.id}">Entregue a terceiro</button>`}
           ${window.CT ? (() => { const n = CT.guardadosDe(r.id); return `<button type="button" class="ck-pert${n ? ' tem' : ''}" data-pertences="${r.id}">🎒 Pertences${n ? ` · ${n} guardado${n > 1 ? 's' : ''}` : ''}</button>`; })() : ''}
@@ -211,14 +214,16 @@ const CK = (() => {
     const geracao = st.geracao;
     st.salvando.add(chave); renderLista();
     try {
-      const res = await comTempo(S.api.rpc('entregar_vestimenta', { p_id: id, p_valor: valor, p_para: para || null, p_terceiro: terceiro || null, p_obs: obs || null, p_recepcionista: S.recep }));
+      const r0 = st.linhas.get(id);
+      const cong = !!valor && congressoLigado() && r0 && (r0.tipo || 'padre') === 'padre';
+      const res = await comTempo(S.api.rpc('entregar_vestimenta_v2', { p_id: id, p_valor: valor, p_para: para || null, p_terceiro: terceiro || null, p_obs: obs || null, p_recepcionista: S.recep, p_congresso: cong }));
       if (geracao !== st.geracao) return false;
       const r = res && res.registro;
       if (r && r.id != null) st.linhas.set(r.id, r);
       if (res && res.status === 'ja') {
         toast(`Já tinha sido entregue às ${hora(r.vestimenta_em)}${r.vestimenta_por ? ' por ' + r.vestimenta_por : ''}${r.vestimenta_para === 'terceiro' ? ' (a ' + (r.vestimenta_terceiro || 'terceiro') + ')' : ''}`);
       } else if (valor) {
-        toast(para === 'terceiro' ? `✓ Vestimenta de ${r.nome} entregue a ${r.vestimenta_terceiro}` : `✓ Vestimenta entregue: ${r.nome}`);
+        toast((para === 'terceiro' ? `✓ Vestimenta de ${r.nome} entregue a ${r.vestimenta_terceiro}` : `✓ Vestimenta entregue: ${r.nome}`) + (r.casula_congresso ? ' · casula congresso' : ''));
         if (window.CT) setTimeout(() => CT.avisarEstoque(r), 1800);
       } else toast('Entrega desfeita');
       return true;
@@ -228,6 +233,41 @@ const CK = (() => {
     } finally {
       if (geracao === st.geracao) { st.salvando.delete(chave); render(); }
     }
+  }
+  /* ---------- Casula congresso ---------- */
+  const congressoLigado = () => { try { return localStorage.getItem('ck_casula') === 'congresso'; } catch (e) { return false; } };
+  function mostrarChaveCasula(){
+    const lig = congressoLigado();
+    document.querySelectorAll('[data-casula]').forEach(b => { const a = (b.dataset.casula === 'congresso') === lig; b.classList.toggle('ativo', a); b.setAttribute('aria-pressed', String(a)); });
+    $('#ck-casula').classList.toggle('congresso', lig);
+    $('#ck-casula').hidden = st.tipo !== 'padre';
+  }
+  document.querySelectorAll('[data-casula]').forEach(b => b.addEventListener('click', () => {
+    try { localStorage.setItem('ck_casula', b.dataset.casula); } catch (e) {}
+    mostrarChaveCasula();
+    toast(b.dataset.casula === 'congresso' ? 'Este celular agora registra CASULA CONGRESSO' : 'Este celular agora registra casula comum');
+  }));
+  async function alternarCongresso(r){
+    const chave = r.id + ':congresso';
+    if (st.salvando.has(chave)) return;
+    const valor = !r.casula_congresso;
+    const salvar = async () => {
+      const geracao = st.geracao;
+      st.salvando.add(chave); renderLista();
+      try {
+        const res = await comTempo(S.api.rpc('marcar_casula_congresso', { p_id: r.id, p_valor: valor, p_recepcionista: S.recep }));
+        if (geracao !== st.geracao) return;
+        if (res && res.registro) st.linhas.set(res.registro.id, res.registro);
+        toast(valor ? `✓ ${r.nome}: casula congresso` : `${r.nome}: casula comum`);
+      } catch (e) { if (geracao === st.geracao) toast('Não foi possível salvar: ' + erroAmigavel(e), true); }
+      finally { if (geracao === st.geracao) { st.salvando.delete(chave); render(); } }
+    };
+    if (valor) return salvar();
+    const m = abrirModal(`<h2>Tem certeza?</h2><p>Desmarcar <b>casula congresso</b> de <b>${esc(r.nome)}</b>? Ela passa a contar como casula comum.</p>
+      <div class="botoes"><button class="btn" id="cg-manter" type="button">NÃO, MANTER</button><button class="btn perigo" id="cg-ok" type="button" disabled>SIM, DESMARCAR</button></div>`);
+    $('#cg-manter', m).onclick = fecharModal; $('#cg-manter', m).focus();
+    const ok = $('#cg-ok', m); setTimeout(() => { if (ok.isConnected) ok.disabled = false; }, 1000);
+    ok.onclick = () => { fecharModal(); salvar(); };
   }
   function aTerceiro(r){
     const m = abrirModal(`<h2>Entregue a terceiro</h2><p>Vestimenta de <b>${esc(r.nome)}</b></p>
@@ -262,6 +302,8 @@ const CK = (() => {
   }
   ui.itens.addEventListener('click', e => {
     const pb = e.target.closest('[data-pertences]'); if (pb) { if (window.CT) CT.abrirPertences(+pb.dataset.pertences); return; }
+    const cg = e.target.closest('[data-congresso]');
+    if (cg) { const r = st.linhas.get(+cg.dataset.congresso); if (r) alternarCongresso(r); return; }
     const d = e.target.closest('[data-desfazer]');
     if (d) { const r = st.linhas.get(+d.dataset.desfazer); if (r) confirmarDesfazer(r); return; }
     const b = e.target.closest('[data-entregar]'); if (!b || b.disabled) return;
@@ -330,22 +372,22 @@ const CK = (() => {
       const [rows] = await Promise.all([comTempo(S.api.padres(), 60000), carregarXlsx()]);
       rows.sort((a, b) => a.vicariato.localeCompare(b.vicariato, 'pt-BR') || semTitulo(a.nome).localeCompare(semTitulo(b.nome), 'pt-BR'));
       const dataHora = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '';
-      const cab = ['Vicariato', 'Nome', 'Função', 'Paróquia', 'Mitra', 'Vestimenta entregue', 'Entregue a', 'Nome de quem retirou', 'Observação', 'Horário', 'Registrado por', 'Incluído na hora'];
+      const cab = ['Vicariato', 'Nome', 'Função', 'Paróquia', 'Mitra', 'Vestimenta entregue', 'Casula congresso', 'Entregue a', 'Nome de quem retirou', 'Observação', 'Horário', 'Registrado por', 'Incluído na hora'];
       const wb = XLSX.utils.book_new();
-      const resumo = [['Grupo', 'Esperados', 'Entregues', 'Faltam', 'A terceiros']];
+      const resumo = [['Grupo', 'Esperados', 'Entregues', 'Faltam', 'A terceiros', 'Casula congresso']];
       for (const T of Object.values(TIPOS)) {
         const doT = rows.filter(r => (r.tipo || 'padre') === T.tipo);
         const linhas = doT.map(r => [[r.vicariato, r.vicariato2].filter(Boolean).join(' / '), r.nome, r.funcao || '', r.paroquia || '', r.mitra || '',
-          r.vestimenta_em ? 'Sim' : 'Não', r.vestimenta_em ? (r.vestimenta_para === 'terceiro' ? 'Terceiro' : 'Padre') : '', r.vestimenta_terceiro || '', r.vestimenta_obs || '', dataHora(r.vestimenta_em), r.vestimenta_por || '', r.incluido_na_hora ? 'Sim' : '']);
+          r.vestimenta_em ? 'Sim' : 'Não', r.vestimenta_em && r.casula_congresso ? 'Sim' : '', r.vestimenta_em ? (r.vestimenta_para === 'terceiro' ? 'Terceiro' : 'Padre') : '', r.vestimenta_terceiro || '', r.vestimenta_obs || '', dataHora(r.vestimenta_em), r.vestimenta_por || '', r.incluido_na_hora ? 'Sim' : '']);
         const ws = XLSX.utils.aoa_to_sheet([cab, ...linhas]);
-        ws['!cols'] = [{ wch: 26 }, { wch: 44 }, { wch: 20 }, { wch: 50 }, { wch: 8 }, { wch: 8 }, { wch: 20 }, { wch: 18 }, { wch: 10 }, { wch: 20 }, { wch: 18 }, { wch: 10 }];
+        ws['!cols'] = [{ wch: 26 }, { wch: 44 }, { wch: 20 }, { wch: 50 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 24 }, { wch: 30 }, { wch: 20 }, { wch: 18 }, { wch: 10 }];
         ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(linhas.length, 1), c: cab.length - 1 } }) };
         XLSX.utils.book_append_sheet(wb, ws, T.varios[0].toUpperCase() + T.varios.slice(1));
         const ct = contar(doT);
-        resumo.push([T.varios.toUpperCase(), ct.esperados, ct.vest, ct.faltam, ct.terc]);
+        resumo.push([T.varios.toUpperCase(), ct.esperados, ct.vest, ct.faltam, ct.terc, ct.cong]);
         if (T.vic) {
           const m = new Map(); for (const r of doT) for (const v of [r.vicariato, r.vicariato2]) if (v) { if (!m.has(v)) m.set(v, []); m.get(v).push(r); }
-          [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).forEach(([v, a]) => { const c = contar(a); resumo.push(['   ' + v, c.esperados, c.vest, c.faltam, c.terc]); });
+          [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).forEach(([v, a]) => { const c = contar(a); resumo.push(['   ' + v, c.esperados, c.vest, c.faltam, c.terc, c.cong]); });
         }
       }
       const ws2 = XLSX.utils.aoa_to_sheet(resumo);
@@ -371,6 +413,7 @@ const CK = (() => {
     ui.nome.placeholder = `Digite parte do nome do ${T.um}`;
     $('#ck-incluir').textContent = `+ ${T.um[0].toUpperCase() + T.um.slice(1)} não está na lista`;
     $('#ck-exportar').hidden = S.perfil !== 'admin';
+    mostrarChaveCasula();
     render();
   }
 

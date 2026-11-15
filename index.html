@@ -9,9 +9,9 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Credenciamento</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231f3a5f'/%3E%3Cpath d='M18 33l9 9 19-20' stroke='white' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-<script src="config.js?v=202611151255"></script>
+<script src="config.js?v=202611151559"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
-<link rel="stylesheet" href="styles.css?v=202611151255">
+<link rel="stylesheet" href="styles.css?v=202611151559">
 </head>
 <body>
 
@@ -110,11 +110,19 @@
           <label for="ck-nome" id="ck-lbl-nome">2 · Nome</label>
           <input id="ck-nome" type="search" placeholder="Digite parte do nome" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
         </div>
+        <div class="ck-casula" id="ck-casula">
+          <span class="ck-casula-lbl">Casula entregue neste celular</span>
+          <div class="segmento" role="group" aria-label="Tipo de casula">
+            <button type="button" data-casula="comum" class="ativo">Comum</button>
+            <button type="button" data-casula="congresso">Congresso</button>
+          </div>
+        </div>
         <div class="segmento ck-filtros" role="group" aria-label="Mostrar">
           <button type="button" data-ckfiltro="todos" class="ativo">Todos</button>
           <button type="button" data-ckfiltro="faltam">Faltam</button>
           <button type="button" data-ckfiltro="entregues">Entregues</button>
-          <button type="button" data-ckfiltro="terceiros">A terceiros</button>
+          <button type="button" data-ckfiltro="terceiros">Terceiros</button>
+          <button type="button" data-ckfiltro="congresso">Congresso</button>
         </div>
       </div>
       <div class="barra-lista">
@@ -194,10 +202,10 @@
 <datalist id="dl-paroquias"></datalist>
 <datalist id="dl-vicariatos"></datalist>
 
-<script src="paroquias.js?v=202611151255"></script>
-<script src="api.js?v=202611151255"></script>
-<script src="app.js?v=202611151255"></script>
-<script src="checkin.js?v=202611151255"></script>
-<script src="controle.js?v=202611151255"></script>
+<script src="paroquias.js?v=202611151559"></script>
+<script src="api.js?v=202611151559"></script>
+<script src="app.js?v=202611151559"></script>
+<script src="checkin.js?v=202611151559"></script>
+<script src="controle.js?v=202611151559"></script>
 </body>
 </html>

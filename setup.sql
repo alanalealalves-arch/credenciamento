@@ -712,3 +712,93 @@ end;
 $$;
 revoke all on function public.entregar_vestimenta(bigint, boolean, text, text, text, text) from public, anon;
 grant execute on function public.entregar_vestimenta(bigint, boolean, text, text, text, text) to authenticated;
+
+-- =====================================================================
+-- 12) Casula congresso (modelo/preço diferente)
+--     Aditivo: entregar_vestimenta (6 parâmetros) continua igual para
+--     quem estiver com a versão anterior do app.
+-- =====================================================================
+alter table public.padres add column if not exists casula_congresso boolean not null default false;
+
+-- Casulas comuns entregues (as de congresso não descontam do estoque comum)
+create or replace function public.casulas_entregues(p_local text)
+returns integer
+language sql stable
+set search_path = ''
+as $$
+  select count(*)::integer from public.padres
+   where tipo = 'padre' and vestimenta_em is not null and not casula_congresso and vicariato = p_local;
+$$;
+
+-- Entrega já dizendo se é casula congresso (atômico)
+create or replace function public.entregar_vestimenta_v2(
+  p_id            bigint,
+  p_valor         boolean,
+  p_para          text,
+  p_terceiro      text,
+  p_obs           text,
+  p_recepcionista text,
+  p_congresso     boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_res jsonb;
+begin
+  v_res := public.entregar_vestimenta(p_id, p_valor, p_para, p_terceiro, p_obs, p_recepcionista);
+  if v_res->>'status' = 'ok' then
+    update public.padres
+       set casula_congresso = case when p_valor then coalesce(p_congresso, false) else false end
+     where id = p_id;
+    select jsonb_build_object('status', 'ok', 'registro', to_jsonb(p)) into v_res from public.padres p where p.id = p_id;
+  end if;
+  return v_res;
+end;
+$$;
+revoke all on function public.entregar_vestimenta_v2(bigint, boolean, text, text, text, text, boolean) from public, anon;
+grant execute on function public.entregar_vestimenta_v2(bigint, boolean, text, text, text, text, boolean) to authenticated;
+
+-- Corrigir depois da entrega: marcar/desmarcar casula congresso
+create or replace function public.marcar_casula_congresso(p_id bigint, p_valor boolean, p_recepcionista text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare v_row public.padres;
+begin
+  if public.papel() is null then
+    raise exception 'Acesso negado' using errcode = '42501';
+  end if;
+  select * into v_row from public.padres where id = p_id for update;
+  if not found then
+    raise exception 'Padre não encontrado' using errcode = 'P0002';
+  end if;
+  if v_row.vestimenta_em is null then
+    raise exception 'A vestimenta ainda não foi entregue' using errcode = '22023';
+  end if;
+  update public.padres set casula_congresso = coalesce(p_valor, false) where id = p_id returning * into v_row;
+  return jsonb_build_object('status', 'ok', 'registro', to_jsonb(v_row));
+end;
+$$;
+revoke all on function public.marcar_casula_congresso(bigint, boolean, text) from public, anon;
+grant execute on function public.marcar_casula_congresso(bigint, boolean, text) to authenticated;
+
+-- Desfazer a entrega pela função antiga também limpa a marcação
+create or replace function public.padres_limpa_congresso()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.vestimenta_em is null then new.casula_congresso := false; end if;
+  return new;
+end;
+$$;
+drop trigger if exists padres_limpa_congresso on public.padres;
+create trigger padres_limpa_congresso
+  before update on public.padres
+  for each row execute function public.padres_limpa_congresso();

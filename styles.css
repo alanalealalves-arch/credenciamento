@@ -312,3 +312,16 @@ main{max-width:1160px;padding:30px 0 60px}
 .ck-btn.ck-largo.on.padre{background:var(--verde);border-color:var(--verde);color:#fff}
 .ck-btn.ck-largo.on.terc{background:#b58a4f;border-color:#b58a4f;color:#fff}
 .ck-btn.ck-largo b{font-weight:800}
+/* ---------- Casula congresso ---------- */
+.ck-casula{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px dashed #e7e2dc;border-radius:12px;padding:10px 12px;margin:0 0 16px}
+.ck-casula .segmento{margin:0;flex:0 0 auto}
+.ck-casula .segmento button{min-width:110px}
+.ck-casula-lbl{font-weight:700;color:var(--azul);font-size:14px}
+.ck-casula.congresso{border:2px solid #b58a4f;background:#f8f0e3}
+.ck-casula.congresso [data-casula="congresso"].ativo{background:#b58a4f;color:#fff}
+.ck-tag.congresso{background:#b58a4f;color:#fff}
+.ck-cong{grid-column:1/-1;border:1px solid #d9c7a8;background:#fff;color:#7a5a2b;border-radius:10px;padding:9px;font-weight:600;font-size:13px}
+.ck-cong.on{background:#f8f0e3;border-color:#b58a4f}
+.es-cong{grid-column:1/-1;border-color:#b58a4f;background:#f8f0e3}
+.ck-filtros button{font-size:13px}
+@media(max-width:760px){.ck-casula{flex-direction:column;align-items:stretch}.ck-casula .segmento button{min-width:0;flex:1}.ck-filtros button{font-size:11px;padding:0 2px}}
