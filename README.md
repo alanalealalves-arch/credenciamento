@@ -63,6 +63,8 @@ Testes: `tests/checkin.sql` (banco) e `tests/test_checkin.py` (navegador, vário
 
 **Ordem de publicação:** rode o `setup.sql` no Supabase **antes** de fazer merge na `main` — o GitHub publica o site sozinho, mas não altera o banco.
 
+**Versão dos arquivos:** a cada publicação, troque o número `?v=` dos arquivos `.js`/`.css` no `index.html` (ex.: data e hora). Sem isso, celulares que já abriram o app podem misturar arquivos novos e antigos por até 10 minutos.
+
 ## Testes
 
 Python 3.10+ e Chromium/Playwright:
