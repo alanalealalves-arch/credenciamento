@@ -49,6 +49,7 @@ class AppTests(unittest.TestCase):
   if admin:self.page.click('[data-perfil="admin"]')
   self.page.fill('#login-senha','correta'); self.page.click('#btn-entrar')
   self.page.locator('#tela-app').wait_for(state='visible')
+  self.page.click('[data-aba="cadastro"]')
  def fill(self):
   for sel,val in [('#f-nome','Ana Maria'),('#f-tel','999998888'),('#f-email','ANA@example.org'),('#f-par','Paróquia São José'),('#f-vic','Vicariato Soledade')]:self.page.fill(sel,val)
  def save(self):

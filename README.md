@@ -45,6 +45,24 @@ O vicariato é obrigatório nos novos cadastros, com sugestões do catálogo. Ao
 
 O cadastro usa UUID por envio para reenvios idempotentes. Alterar o formulário cria um novo envio. A função serializa o cadastro para verificar duplicidade por telefone/e-mail, permitindo confirmação explícita quando necessário. A lista recebe eventos e faz reconciliação completa a cada 20 segundos para recuperar alterações perdidas, inclusive edições que não mudam o total.
 
+## Check-in de padres e bispos
+
+Primeira aba do app. A lista é pré-carregada na tabela `padres` (nome, função, vicariato, paróquia, mitra) e a recepção:
+
+1. escolhe o **vicariato** (o padre informa);
+2. digita parte do **nome**;
+3. toca em **Marcar chegada** e/ou **Entregar vestimenta**. Tocar de novo pede confirmação para desfazer.
+
+No topo: Esperados, Chegaram, Faltam e Vestimentas (tocar filtra a lista). Sem vicariato e sem nome, a tela mostra o painel por vicariato. Quem não está na lista entra por **+ Não está na lista** (já marcado como chegou, com aviso de nome repetido). O administrador exporta o **Excel do check-in** (lista + resumo por vicariato).
+
+Regras no banco (`setup.sql`, seção 7): só as funções `marcar_padre` e `incluir_padre` alteram a situação, para equipe e admin; marcar o que já está marcado devolve `ja` e preserva quem marcou primeiro; entregar vestimenta também marca chegada; desmarcar chegada desmarca a vestimenta. Editar e excluir nomes da lista: só admin.
+
+A carga inicial da lista não fica no repositório (dados pessoais em repositório público): é feita uma vez pelo SQL Editor.
+
+Testes: `tests/checkin.sql` (banco) e `tests/test_checkin.py` (navegador, vários aparelhos simulados; `PADRES_JSON=arquivo.json` usa uma lista real local).
+
+**Ordem de publicação:** rode o `setup.sql` no Supabase **antes** de fazer merge na `main` — o GitHub publica o site sozinho, mas não altera o banco.
+
 ## Testes
 
 Python 3.10+ e Chromium/Playwright:

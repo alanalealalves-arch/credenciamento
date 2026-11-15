@@ -57,6 +57,37 @@ function criarApiSupabase(sb, cfg){
             pl => aoMudar({ tipo: pl.eventType, novo: pl.new, antigo: pl.old }))
         .subscribe(st => aoStatus(st));
       return () => sb.removeChannel(canal);
+    },
+
+    /* ---------- Check-in de padres ---------- */
+    async padres(){
+      const out = []; let ultimo = 0;
+      for (;;) {
+        const { data, error } = await sb.from('padres').select('*')
+          .gt('id', ultimo).order('id', { ascending: true }).limit(1000);
+        if (error) falha(error);
+        out.push(...data);
+        if (data.length < 1000) break;
+        ultimo = data[data.length - 1].id;
+      }
+      return out;
+    },
+    async marcarPadre(id, campo, valor, recepcionista){
+      const { data, error } = await sb.rpc('marcar_padre', { p_id: id, p_campo: campo, p_valor: valor, p_recepcionista: recepcionista });
+      if (error) falha(error);
+      return data;
+    },
+    async incluirPadre(p){
+      const { data, error } = await sb.rpc('incluir_padre', { p_nome: p.nome, p_vicariato: p.vicariato, p_paroquia: p.paroquia || null, p_recepcionista: p.recepcionista, p_forcar: !!p.forcar, p_tipo: p.tipo || 'padre' });
+      if (error) falha(error);
+      return data;
+    },
+    ouvirPadres(aoMudar, aoStatus){
+      const canal = sb.channel('padres-' + Math.random().toString(36).slice(2))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'padres' },
+            pl => aoMudar({ tipo: pl.eventType, novo: pl.new, antigo: pl.old }))
+        .subscribe(st => aoStatus && aoStatus(st));
+      return () => sb.removeChannel(canal);
     }
   };
 }

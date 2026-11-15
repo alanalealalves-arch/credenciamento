@@ -219,7 +219,13 @@ function trocarAba(aba){
   document.querySelectorAll('.abas button').forEach(b => b.classList.toggle('ativo', b.dataset.aba === aba));
   $('#aba-cadastro').hidden = aba !== 'cadastro';
   $('#aba-lista').hidden = aba !== 'lista';
-  if (aba === 'lista') renderLista(); else el.nome.focus();
+  const ck = ['padres', 'diaconos', 'bispos'].includes(aba);
+  $('#aba-checkin').hidden = !ck;
+  $('#contador-participantes').hidden = ck;
+  $('#contador-padres').hidden = !ck;
+  if (aba === 'lista') renderLista();
+  else if (ck) { S.abaCk = aba; if (window.CK) CK.aoMostrar(aba); }
+  else el.nome.focus();
 }
 
 /* ===================== Autocompletar paróquia ===================== */
@@ -534,10 +540,12 @@ function entrarNoApp(email, nome){
   $('#area-exportar').hidden = S.perfil !== 'admin';
   $('.cab-acoes').textContent = S.perfil === 'admin' ? 'AÇÕES' : '';
   mostrarTela('tela-app');
-  trocarAba('cadastro');
+  trocarAba('padres');
   iniciarTempoReal();
+  if (window.CK) CK.iniciar();
 }
 function encerrarSessao(){
+  if (window.CK) CK.parar();
   pararTempoReal(); S.perfil = null; S.clientId = null; S.recep = '';
   CAMPOS.forEach(c => { c.value = ''; limparErroCampo(c); });
   el.itens.replaceChildren(); el.ultimo.textContent = ''; el.total.textContent = '…';

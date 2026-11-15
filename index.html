@@ -54,16 +54,55 @@
     <button class="btn-link" id="btn-sair" type="button">Sair</button>
   </header>
   <section class="contador" aria-live="polite">
-    <div><span class="lbl">PARTICIPANTES CADASTRADOS</span><strong id="total">…</strong></div>
+    <div id="contador-participantes"><span class="lbl">PARTICIPANTES CADASTRADOS</span><strong id="total">…</strong></div>
+    <div id="contador-padres" class="ck-numeros" hidden>
+      <button type="button" class="ck-num" data-ckfiltro="todos"><span class="lbl">ESPERADOS</span><strong id="ck-esperados">…</strong></button>
+      <button type="button" class="ck-num" data-ckfiltro="chegaram"><span class="lbl">CHEGARAM</span><strong id="ck-chegaram">…</strong></button>
+      <button type="button" class="ck-num destaque" data-ckfiltro="faltam"><span class="lbl">FALTAM</span><strong id="ck-faltam">…</strong></button>
+      <button type="button" class="ck-num" data-ckfiltro="vestimenta"><span class="lbl">VESTIMENTAS</span><strong id="ck-vestimentas">…</strong></button>
+    </div>
     <span id="status" class="status reconectando">Conectando…</span>
   </section>
   <nav class="abas">
-    <button type="button" data-aba="cadastro" class="ativo">CADASTRO</button>
+    <button type="button" data-aba="padres" class="ativo">PADRES</button>
+    <button type="button" data-aba="diaconos">DIÁCONOS</button>
+    <button type="button" data-aba="bispos">BISPOS</button>
+    <button type="button" data-aba="cadastro">CADASTRO</button>
     <button type="button" data-aba="lista">LISTA GERAL</button>
   </nav>
   <main>
+    <!-- ---------- Check-in de padres e bispos ---------- -->
+    <section id="aba-checkin">
+      <div class="ck-busca">
+        <div class="campo" id="ck-campo-vic">
+          <label for="ck-vic">1 · Vicariato</label>
+          <select id="ck-vic"><option value="">Todos os vicariatos</option></select>
+        </div>
+        <div class="campo">
+          <label for="ck-nome" id="ck-lbl-nome">2 · Nome</label>
+          <input id="ck-nome" type="search" placeholder="Digite parte do nome" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        </div>
+        <div class="segmento ck-filtros" role="group" aria-label="Mostrar">
+          <button type="button" data-ckfiltro="todos" class="ativo">Todos</button>
+          <button type="button" data-ckfiltro="faltam">Faltam</button>
+          <button type="button" data-ckfiltro="chegaram">Chegaram</button>
+          <button type="button" data-ckfiltro="vestimenta">Sem vestimenta</button>
+        </div>
+      </div>
+      <div class="barra-lista">
+        <span class="info" id="ck-info"></span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="chip" id="ck-incluir" type="button">+ Não está na lista</button>
+          <span class="exportar" id="ck-exportar" hidden><button class="chip" id="ck-xlsx" type="button">Excel do check-in</button></span>
+        </div>
+      </div>
+      <div id="ck-resumo"></div>
+      <div id="ck-itens"></div>
+    </section>
+
+
     <!-- ---------- Cadastro ---------- -->
-    <section id="aba-cadastro"><div class="section-heading"><p class="eyebrow">RECEPÇÃO DO EVENTO</p><h1>Um novo encontro começa aqui.</h1><p>Preencha os dados abaixo para credenciar o participante.</p></div>
+    <section id="aba-cadastro" hidden><div class="section-heading"><p class="eyebrow">RECEPÇÃO DO EVENTO</p><h1>Um novo encontro começa aqui.</h1><p>Preencha os dados abaixo para credenciar o participante.</p></div>
       <form id="form-cad" novalidate autocomplete="off">
         <div id="cad-erro" class="alerta erro" role="alert" hidden></div>
         <div class="campo" data-campo="nome">
@@ -130,5 +169,6 @@
 <script src="paroquias.js"></script>
 <script src="api.js"></script>
 <script src="app.js"></script>
+<script src="checkin.js"></script>
 </body>
 </html>
