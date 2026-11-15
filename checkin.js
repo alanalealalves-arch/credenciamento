@@ -250,12 +250,15 @@ const CK = (() => {
   }
   function confirmarDesfazer(r){
     const terc = r.vestimenta_para === 'terceiro';
-    const m = abrirModal(`<h2>Desfazer entrega?</h2>
-      <p>Vestimenta de <b>${esc(r.nome)}</b> entregue ${terc ? `a <b>${esc(r.vestimenta_terceiro || '')}</b>` : 'ao padre'} às ${esc(hora(r.vestimenta_em))}${r.vestimenta_por ? ' por ' + esc(r.vestimenta_por) : ''}.${r.vestimenta_obs ? `<br><small>Obs.: ${esc(r.vestimenta_obs)}</small>` : ''}</p>
-      <div class="botoes"><button class="btn perigo" id="ck-desfazer" type="button">DESFAZER ENTREGA</button><button class="btn secundario" id="ck-manter" type="button">Manter como está</button></div>`);
+    const m = abrirModal(`<h2>Tem certeza que quer desfazer?</h2>
+      <p>A vestimenta de <b>${esc(r.nome)}</b> foi entregue ${terc ? `a <b>${esc(r.vestimenta_terceiro || '')}</b>` : 'ao padre'} às ${esc(hora(r.vestimenta_em))}${r.vestimenta_por ? ' por ' + esc(r.vestimenta_por) : ''}.${r.vestimenta_obs ? `<br><small>Obs.: ${esc(r.vestimenta_obs)}</small>` : ''}</p>
+      <p>Se desfizer, ela volta para <b>faltam</b>.</p>
+      <div class="botoes"><button class="btn" id="ck-manter" type="button">NÃO, MANTER</button><button class="btn perigo" id="ck-desfazer" type="button" disabled>SIM, DESFAZER</button></div>`);
     $('#ck-manter', m).onclick = fecharModal;
     $('#ck-manter', m).focus();
-    $('#ck-desfazer', m).onclick = () => { fecharModal(); entregar(r.id, false); };
+    const d = $('#ck-desfazer', m);
+    setTimeout(() => { if (d.isConnected) d.disabled = false; }, 1000); // evita desfazer com toque duplo
+    d.onclick = () => { fecharModal(); entregar(r.id, false); };
   }
   ui.itens.addEventListener('click', e => {
     const pb = e.target.closest('[data-pertences]'); if (pb) { if (window.CT) CT.abrirPertences(+pb.dataset.pertences); return; }

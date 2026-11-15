@@ -195,11 +195,12 @@ const CT = (() => {
     const p = st.pert.get(id); if (!p) return;
     const r = window.CK && CK._estado.linhas.get(p.padre_id);
     const desfazer = !!p.devolvido_em;
-    const m = abrirModal(`<h2>${desfazer ? 'Desfazer devolução?' : 'Devolver pertence?'}</h2>
+    const m = abrirModal(`<h2>${desfazer ? 'Tem certeza que quer desfazer a devolução?' : 'Confirmar devolução?'}</h2>
       <p>${p.etiqueta ? `<b>Nº ${esc(p.etiqueta)}</b> · ` : ''}${esc(p.descricao)}${r ? `<br>de <b>${esc(r.nome)}</b>` : ''}</p>
       ${p.foto ? `<img class="pt-grande" data-foto="${esc(p.foto)}" alt="Foto do pertence">` : ''}
-      <div class="botoes"><button class="btn${desfazer ? ' perigo' : ''}" id="pt-dev-ok" type="button">${desfazer ? 'DESFAZER DEVOLUÇÃO' : 'CONFIRMAR DEVOLUÇÃO'}</button><button class="btn secundario" id="pt-dev-cancelar" type="button">Cancelar</button></div>`);
+      <div class="botoes"><button class="btn${desfazer ? ' perigo' : ''}" id="pt-dev-ok" type="button" disabled>${desfazer ? 'SIM, DESFAZER DEVOLUÇÃO' : 'CONFIRMAR DEVOLUÇÃO'}</button><button class="btn secundario" id="pt-dev-cancelar" type="button">${desfazer ? 'Não, manter' : 'Cancelar'}</button></div>`);
     preencherFotos(m);
+    setTimeout(() => { const b = $('#pt-dev-ok', m); if (b && b.isConnected) b.disabled = false; }, 1000); // evita toque duplo
     const sair = () => { fecharModal(); if (voltar) abrirPertences(voltar); };
     $('#pt-dev-cancelar', m).onclick = sair;
     $('#pt-dev-ok', m).onclick = async () => {

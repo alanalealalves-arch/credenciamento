@@ -172,8 +172,16 @@ class CheckinTests(unittest.TestCase):
     self.assertIn('por Ana', b.inner_text('#toast'))
     self.assertEqual(a.evaluate("JSON.parse(localStorage.mock_padres).filter(p=>p.vestimenta_em).length"), 1)
     # desfazer com confirmação
+    # toque duplo na faixa: não desfaz
+    self.item(a, 'Hélio').locator('[data-desfazer]').dblclick(); a.wait_for_timeout(300)
+    self.assertEqual(self.numeros(a)[1], '1', 'toque duplo não desfaz')
+    if a.locator('#ck-manter').count(): a.click('#ck-manter')
+    # toque logo depois de abrir a janela: botão ainda bloqueado
     self.item(a, 'Hélio').locator('[data-desfazer]').click(); a.locator('#ck-desfazer').wait_for()
-    self.assertIn('ao padre', a.inner_text('.modal'))
+    self.assertTrue(a.locator('#ck-desfazer').is_disabled(), 'botão de desfazer começa bloqueado')
+    bb = a.locator('#ck-desfazer').bounding_box(); a.mouse.click(bb['x'] + bb['width'] / 2, bb['y'] + bb['height'] / 2)
+    a.wait_for_timeout(300); self.assertEqual(self.numeros(a)[1], '1', 'toque rápido não desfaz')
+    self.assertIn('Tem certeza', a.inner_text('.modal')); self.assertIn('ao padre', a.inner_text('.modal'))
     a.click('#ck-manter'); self.assertEqual(self.numeros(a)[1], '1', 'cancelar não desfaz')
     self.item(a, 'Hélio').locator('[data-desfazer]').click(); a.click('#ck-desfazer')
     self.espera(a, '#ck-entregues', '0')
