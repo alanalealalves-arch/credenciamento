@@ -429,3 +429,207 @@ end;
 $$;
 revoke all on function public.incluir_padre(text, text, text, text, boolean, text) from public, anon;
 grant execute on function public.incluir_padre(text, text, text, text, boolean, text) to authenticated;
+
+-- =====================================================================
+-- 9) Estoque de casulas por vicariato
+--    Saldo de um local = soma das movimentações. "Disponíveis" no app =
+--    saldo - vestimentas entregues a padres daquele vicariato.
+-- =====================================================================
+create table if not exists public.estoque_mov (
+  id          bigint generated always as identity primary key,
+  local       text not null check (char_length(trim(local)) between 2 and 100),
+  quantidade  integer not null check (quantidade <> 0 and abs(quantidade) <= 10000),
+  tipo        text not null check (tipo in ('definicao', 'transferencia')),
+  contraparte text,
+  por         text,
+  criado_em   timestamptz not null default now()
+);
+create index if not exists estoque_mov_local_idx on public.estoque_mov (local);
+alter table public.estoque_mov enable row level security;
+revoke all on public.estoque_mov from anon, public;
+revoke all on public.estoque_mov from authenticated;
+grant select on public.estoque_mov to authenticated;
+drop policy if exists "estoque: equipe e admin leem" on public.estoque_mov;
+create policy "estoque: equipe e admin leem" on public.estoque_mov
+  for select to authenticated using (public.papel() is not null);
+
+-- Casulas já entregues (vestimenta marcada) a padres do vicariato principal
+create or replace function public.casulas_entregues(p_local text)
+returns integer
+language sql stable
+set search_path = ''
+as $$
+  select count(*)::integer from public.padres
+   where tipo = 'padre' and vestimenta_em is not null and vicariato = p_local;
+$$;
+
+-- Admin define quantas casulas um local tem (registra a diferença).
+create or replace function public.definir_estoque(p_local text, p_quantidade integer, p_recepcionista text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_atual integer;
+  v_local text := trim(coalesce(p_local, ''));
+begin
+  if public.papel() is distinct from 'admin' then
+    raise exception 'Somente o administrador define o estoque' using errcode = '42501';
+  end if;
+  if char_length(v_local) < 2 or p_quantidade is null or p_quantidade < 0 or p_quantidade > 10000 then
+    raise exception 'Quantidade inválida' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(7311003);
+  select coalesce(sum(quantidade), 0) into v_atual from public.estoque_mov where local = v_local;
+  if p_quantidade <> v_atual then
+    insert into public.estoque_mov (local, quantidade, tipo, por)
+    values (v_local, p_quantidade - v_atual, 'definicao', left(p_recepcionista, 60));
+  end if;
+  return jsonb_build_object('status', 'ok', 'local', v_local, 'saldo', p_quantidade);
+end;
+$$;
+revoke all on function public.definir_estoque(text, integer, text) from public, anon;
+grant execute on function public.definir_estoque(text, integer, text) to authenticated;
+
+-- Equipe e admin transferem casulas disponíveis de um local para outro.
+create or replace function public.transferir_estoque(p_origem text, p_destino text, p_quantidade integer, p_recepcionista text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_disp integer;
+  v_origem text := trim(coalesce(p_origem, ''));
+  v_destino text := trim(coalesce(p_destino, ''));
+  v_quem text := left(nullif(trim(coalesce(p_recepcionista, '')), ''), 60);
+begin
+  if public.papel() is null then
+    raise exception 'Acesso negado' using errcode = '42501';
+  end if;
+  if char_length(v_origem) < 2 or char_length(v_destino) < 2 or v_origem = v_destino
+     or p_quantidade is null or p_quantidade < 1 or p_quantidade > 10000 then
+    raise exception 'Transferência inválida' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(7311003);
+  select coalesce(sum(quantidade), 0) - public.casulas_entregues(v_origem) into v_disp
+    from public.estoque_mov where local = v_origem;
+  if v_disp < p_quantidade then
+    return jsonb_build_object('status', 'insuficiente', 'disponiveis', v_disp);
+  end if;
+  insert into public.estoque_mov (local, quantidade, tipo, contraparte, por) values
+    (v_origem, -p_quantidade, 'transferencia', v_destino, v_quem),
+    (v_destino, p_quantidade, 'transferencia', v_origem, v_quem);
+  return jsonb_build_object('status', 'ok', 'disponiveis_origem', v_disp - p_quantidade);
+end;
+$$;
+revoke all on function public.transferir_estoque(text, text, integer, text) from public, anon;
+grant execute on function public.transferir_estoque(text, text, integer, text) to authenticated;
+
+-- =====================================================================
+-- 10) Pertences entregues por padres/bispos (com foto opcional)
+-- =====================================================================
+create table if not exists public.pertences (
+  id            bigint generated always as identity primary key,
+  padre_id      bigint not null references public.padres(id) on delete cascade,
+  etiqueta      text check (etiqueta is null or char_length(etiqueta) <= 30),
+  descricao     text not null check (char_length(trim(descricao)) between 2 and 300),
+  foto          text check (foto is null or foto ~ '^padre_[0-9]+/[A-Za-z0-9_-]+\.jpg$'),
+  recebido_em   timestamptz not null default now(),
+  recebido_por  text,
+  devolvido_em  timestamptz,
+  devolvido_por text,
+  atualizado_em timestamptz not null default now()
+);
+create index if not exists pertences_padre_idx on public.pertences (padre_id);
+alter table public.pertences enable row level security;
+revoke all on public.pertences from anon, public;
+revoke all on public.pertences from authenticated;
+grant select, delete on public.pertences to authenticated;
+drop policy if exists "pertences: equipe e admin leem" on public.pertences;
+drop policy if exists "pertences: admin exclui"        on public.pertences;
+create policy "pertences: equipe e admin leem" on public.pertences
+  for select to authenticated using (public.papel() is not null);
+create policy "pertences: admin exclui" on public.pertences
+  for delete to authenticated using (public.papel() = 'admin');
+
+create or replace function public.guardar_pertence(p_padre_id bigint, p_descricao text, p_etiqueta text, p_foto text, p_recepcionista text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare v_row public.pertences;
+begin
+  if public.papel() is null then
+    raise exception 'Acesso negado' using errcode = '42501';
+  end if;
+  if not exists (select 1 from public.padres where id = p_padre_id) then
+    raise exception 'Padre não encontrado' using errcode = 'P0002';
+  end if;
+  insert into public.pertences (padre_id, descricao, etiqueta, foto, recebido_por)
+  values (p_padre_id, trim(regexp_replace(coalesce(p_descricao, ''), '\s+', ' ', 'g')),
+          nullif(trim(coalesce(p_etiqueta, '')), ''), nullif(p_foto, ''),
+          left(nullif(trim(coalesce(p_recepcionista, '')), ''), 60))
+  returning * into v_row;
+  return jsonb_build_object('status', 'ok', 'registro', to_jsonb(v_row));
+end;
+$$;
+revoke all on function public.guardar_pertence(bigint, text, text, text, text) from public, anon;
+grant execute on function public.guardar_pertence(bigint, text, text, text, text) to authenticated;
+
+create or replace function public.devolver_pertence(p_id bigint, p_valor boolean, p_recepcionista text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare v_row public.pertences;
+begin
+  if public.papel() is null then
+    raise exception 'Acesso negado' using errcode = '42501';
+  end if;
+  select * into v_row from public.pertences where id = p_id for update;
+  if not found then
+    raise exception 'Pertence não encontrado' using errcode = 'P0002';
+  end if;
+  if p_valor and v_row.devolvido_em is not null then
+    return jsonb_build_object('status', 'ja', 'registro', to_jsonb(v_row));
+  end if;
+  update public.pertences
+     set devolvido_em  = case when p_valor then now() else null end,
+         devolvido_por = case when p_valor then left(nullif(trim(coalesce(p_recepcionista, '')), ''), 60) else null end,
+         atualizado_em = now()
+   where id = p_id returning * into v_row;
+  return jsonb_build_object('status', 'ok', 'registro', to_jsonb(v_row));
+end;
+$$;
+revoke all on function public.devolver_pertence(bigint, boolean, text) from public, anon;
+grant execute on function public.devolver_pertence(bigint, boolean, text) to authenticated;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'estoque_mov') then
+      execute 'alter publication supabase_realtime add table public.estoque_mov';
+    end if;
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'pertences') then
+      execute 'alter publication supabase_realtime add table public.pertences';
+    end if;
+  end if;
+end $$;
+
+-- Fotos: bucket privado; equipe e admin enviam e veem; só admin apaga.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('pertences', 'pertences', false, 3145728, array['image/jpeg'])
+on conflict (id) do update set public = false, file_size_limit = 3145728, allowed_mime_types = array['image/jpeg'];
+drop policy if exists "pertences fotos: equipe e admin leem"   on storage.objects;
+drop policy if exists "pertences fotos: equipe e admin enviam" on storage.objects;
+drop policy if exists "pertences fotos: admin apaga"           on storage.objects;
+create policy "pertences fotos: equipe e admin leem" on storage.objects
+  for select to authenticated using (bucket_id = 'pertences' and public.papel() is not null);
+create policy "pertences fotos: equipe e admin enviam" on storage.objects
+  for insert to authenticated with check (bucket_id = 'pertences' and public.papel() is not null);
+create policy "pertences fotos: admin apaga" on storage.objects
+  for delete to authenticated using (bucket_id = 'pertences' and public.papel() = 'admin');

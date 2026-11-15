@@ -65,6 +65,12 @@ Testes: `tests/checkin.sql` (banco) e `tests/test_checkin.py` (navegador, vário
 
 **Versão dos arquivos:** a cada publicação, troque o número `?v=` dos arquivos `.js`/`.css` no `index.html` (ex.: data e hora). Sem isso, celulares que já abriram o app podem misturar arquivos novos e antigos por até 10 minutos.
 
+## Estoque de casulas e pertences
+
+- **ESTOQUE**: casulas por local (vicariatos + "Reserva central"). Disponíveis = casulas do local − vestimentas entregues a padres daquele vicariato (vicariato principal). Situação = disponíveis − padres que faltam chegar ("Pode faltar"/"Sobra"). Admin define o total de cada local (✎); equipe e admin transferem (não deixa a origem ficar negativa). Tudo fica em `estoque_mov` (histórico em "Movimentações").
+- **PERTENCES**: botão "Pertences" no cartão de cada padre/bispo/diácono — descrição, nº de etiqueta e foto opcional (comprimida no celular para ~150 KB, JPEG). Fotos no bucket privado `pertences` do Supabase Storage (só usuários logados veem, por link temporário). Devolução com confirmação; aba PERTENCES lista e busca.
+- Banco: `setup.sql` seções 9–10. Testes: `tests/estoque.sql` e `tests/test_checkin.py`.
+
 ## Testes
 
 Python 3.10+ e Chromium/Playwright:

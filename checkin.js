@@ -105,6 +105,7 @@ const CK = (() => {
     ui.faltam.textContent = st.carregado ? fmt(c.faltam) : '…';
     ui.vestimentas.textContent = st.carregado ? fmt(c.vest) : '…';
     renderSelect();
+    if (window.CT) CT.render();
     if ($('#aba-checkin').hidden) return;
     renderLista();
   }
@@ -175,6 +176,7 @@ const CK = (() => {
           <button type="button" class="ck-btn vest${r.vestimenta_em ? ' on' : ''}" data-ck="vestimenta" data-id="${r.id}" ${sVes ? 'disabled' : ''}>
             ${sVes ? 'Salvando…' : r.vestimenta_em ? `✓ Vestimenta <small>${esc(hora(r.vestimenta_em))}${r.vestimenta_por ? ' · ' + esc(r.vestimenta_por) : ''}</small>` : 'Entregar vestimenta'}
           </button>
+          ${window.CT ? (() => { const n = CT.guardadosDe(r.id); return `<button type="button" class="ck-pert${n ? ' tem' : ''}" data-pertences="${r.id}">🎒 Pertences${n ? ` · ${n} guardado${n > 1 ? 's' : ''}` : ''}</button>`; })() : ''}
         </div>
       </div>`;
     }
@@ -213,7 +215,10 @@ const CK = (() => {
       if (res && res.status === 'ja') {
         const quando = campo === 'chegou' ? r.chegou_em : r.vestimenta_em, quem = campo === 'chegou' ? r.chegou_por : r.vestimenta_por;
         toast(`Já estava marcado às ${hora(quando)}${quem ? ' por ' + quem : ''}`);
-      } else if (valor) toast(campo === 'chegou' ? `✓ Chegada: ${r.nome}` : `✓ Vestimenta entregue: ${r.nome}`);
+      } else if (valor) {
+        toast(campo === 'chegou' ? `✓ Chegada: ${r.nome}` : `✓ Vestimenta entregue: ${r.nome}`);
+        if (campo === 'vestimenta' && window.CT) setTimeout(() => CT.avisarEstoque(r), 1800);
+      }
       else toast('Marcação desfeita');
     } catch (e) {
       if (geracao === st.geracao) toast('Não foi possível salvar: ' + erroAmigavel(e), true);
@@ -232,6 +237,7 @@ const CK = (() => {
     $('#ck-desfazer', m).onclick = () => { fecharModal(); marcar(r.id, campo, false); };
   }
   ui.itens.addEventListener('click', e => {
+    const pb = e.target.closest('[data-pertences]'); if (pb) { if (window.CT) CT.abrirPertences(+pb.dataset.pertences); return; }
     const b = e.target.closest('[data-ck]'); if (!b || b.disabled) return;
     const r = st.linhas.get(+b.dataset.id); if (!r) return;
     const campo = b.dataset.ck;
@@ -343,7 +349,7 @@ const CK = (() => {
     render();
   }
 
-  const api = { iniciar, parar, aoMostrar, carregar, _estado: st };
+  const api = { iniciar, parar, aoMostrar, carregar, renderSoLista: () => { if (!$('#aba-checkin').hidden) renderLista(); }, _estado: st };
   return api;
 })();
 window.CK = CK;

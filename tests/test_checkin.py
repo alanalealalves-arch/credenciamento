@@ -25,12 +25,12 @@ const ler = () => JSON.parse(localStorage.getItem(KEY) || '[]');
 const gravar = a => localStorage.setItem(KEY, JSON.stringify(a));
 if (!localStorage.getItem(KEY)) gravar((window.__SEED__ || []).map((p, i) => ({ id: i + 1, incluido_na_hora: false, chegou_em: null, chegou_por: null, vestimenta_em: null, vestimenta_por: null, ...p })));
 const bc = new BroadcastChannel('mock-rt'); let ouvinte = null; window.__surdo = false; window.__calls = [];
-bc.onmessage = e => { if (!window.__surdo && ouvinte) ouvinte(e.data); };
+bc.onmessage = e => { if (window.__surdo) return; if (e.data && e.data.__tab) { const f = window.__ouvTab && window.__ouvTab[e.data.__tab]; if (f) f(e.data); return; } if (ouvinte) ouvinte(e.data); };
 const emitir = ev => { bc.postMessage(ev); if (!window.__surdo && ouvinte) ouvinte(ev); };
 const agora = () => new Date().toISOString();
 window.__API_FACTORY__ = () => ({
   sessao: async () => null,
-  entrar: async (email, senha) => { if (senha !== 'correta') throw Error('Invalid login credentials'); return { email }; },
+  entrar: async (email, senha) => { if (senha !== 'correta') throw Error('Invalid login credentials'); window.__perfil = email.startsWith('admin') ? 'admin' : 'equipe'; return { email }; },
   sair: async () => {}, todos: async () => [], contar: async () => 0,
   ouvir: (c, s) => { s('SUBSCRIBED'); return () => {}; },
   cadastrar: async () => ({ status: 'ok', registro: { id: 1 } }), atualizar: async () => ({}), excluir: async () => {},
@@ -47,6 +47,30 @@ window.__API_FACTORY__ = () => ({
       else { r.vestimenta_em = r.vestimenta_por = null; }
     }
     gravar(a); emitir({ tipo: 'UPDATE', novo: { ...r } }); return { status: 'ok', registro: { ...r } };
+  },
+  tabela: async nome => JSON.parse(localStorage.getItem('mock_' + nome) || '[]'),
+  ouvirTabela: (nome, cb) => { (window.__ouvTab = window.__ouvTab || {})[nome] = cb; return () => { delete window.__ouvTab[nome]; }; },
+  enviarFoto: async (blob, id) => { const url = await new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(blob); });
+    const nome = `padre_${id}/f${Date.now()}.jpg`; const fotos = JSON.parse(localStorage.getItem('mock_fotos') || '{}'); fotos[nome] = url; localStorage.setItem('mock_fotos', JSON.stringify(fotos));
+    window.__fotoBytes = blob.size; window.__fotoTipo = blob.type; return nome; },
+  urlFoto: async c => JSON.parse(localStorage.getItem('mock_fotos') || '{}')[c],
+  rpc: async (fn, a) => {
+    const L = n => JSON.parse(localStorage.getItem('mock_' + n) || '[]'), G = (n, v) => localStorage.setItem('mock_' + n, JSON.stringify(v));
+    const emitT = (tab, row) => { bc.postMessage({ __tab: tab, tipo: 'INSERT', novo: row }); if (!window.__surdo && window.__ouvTab && window.__ouvTab[tab]) window.__ouvTab[tab]({ tipo: 'INSERT', novo: row }); };
+    const saldo = l => L('estoque_mov').filter(m => m.local === l).reduce((s, m) => s + m.quantidade, 0);
+    const entregues = l => ler().filter(p => (p.tipo || 'padre') === 'padre' && p.vestimenta_em && p.vicariato === l).length;
+    const novoId = arr => Math.max(0, ...arr.map(x => x.id)) + 1;
+    if (fn === 'definir_estoque') { if (window.__perfil !== 'admin') throw Error('Somente o administrador define o estoque');
+      const d = a.p_quantidade - saldo(a.p_local); if (d) { const m = L('estoque_mov'); const r = { id: novoId(m), local: a.p_local, quantidade: d, tipo: 'definicao', por: a.p_recepcionista, criado_em: agora() }; m.push(r); G('estoque_mov', m); emitT('estoque_mov', r); }
+      return { status: 'ok' }; }
+    if (fn === 'transferir_estoque') { const disp = saldo(a.p_origem) - entregues(a.p_origem); if (disp < a.p_quantidade) return { status: 'insuficiente', disponiveis: disp };
+      const m = L('estoque_mov'); const r1 = { id: novoId(m), local: a.p_origem, quantidade: -a.p_quantidade, tipo: 'transferencia', contraparte: a.p_destino, por: a.p_recepcionista, criado_em: agora() }; m.push(r1);
+      const r2 = { id: novoId(m), local: a.p_destino, quantidade: a.p_quantidade, tipo: 'transferencia', contraparte: a.p_origem, por: a.p_recepcionista, criado_em: agora() }; m.push(r2); G('estoque_mov', m); emitT('estoque_mov', r1); emitT('estoque_mov', r2);
+      return { status: 'ok', disponiveis_origem: disp - a.p_quantidade }; }
+    if (fn === 'guardar_pertence') { const m = L('pertences'); const r = { id: novoId(m), padre_id: a.p_padre_id, descricao: a.p_descricao, etiqueta: a.p_etiqueta || null, foto: a.p_foto, recebido_em: agora(), recebido_por: a.p_recepcionista, devolvido_em: null, devolvido_por: null }; m.push(r); G('pertences', m); emitT('pertences', r); return { status: 'ok', registro: r }; }
+    if (fn === 'devolver_pertence') { const m = L('pertences'); const r = m.find(x => x.id === a.p_id); if (a.p_valor && r.devolvido_em) return { status: 'ja', registro: r };
+      r.devolvido_em = a.p_valor ? agora() : null; r.devolvido_por = a.p_valor ? a.p_recepcionista : null; G('pertences', m); bc.postMessage({ __tab: 'pertences', tipo: 'UPDATE', novo: r }); return { status: 'ok', registro: r }; }
+    throw Error('rpc desconhecida ' + fn);
   },
   incluirPadre: async p => {
     const a = ler();
@@ -85,7 +109,7 @@ class CheckinTests(unittest.TestCase):
     p.route('https://**/*', lambda r: r.abort())
     p.goto(self.url); p.locator('#tela-login').wait_for(state='visible')
     p.fill('#login-nome', nome)
-    if admin: p.click('[data-perfil="admin"]')
+    p.click('[data-perfil="admin"]' if admin else '[data-perfil="equipe"]')
     p.fill('#login-senha', 'correta'); p.click('#btn-entrar')
     p.locator('#aba-checkin').wait_for(state='visible')
     p.wait_for_function("document.querySelector('#ck-esperados').textContent !== '…'")
@@ -196,6 +220,64 @@ class CheckinTests(unittest.TestCase):
     a.wait_for_function("document.querySelector('#ck-esperados').textContent === '%d'" % N_PADRES)
     self.assertEqual(a.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), True)
     b.screenshot(path='/tmp/ck-celular-bispos.png')
+
+  def test_estoque_de_casulas(self):
+    adm = self.celular('Alana', admin=True); eq = self.celular('Bia', mobile=True)
+    adm.click('[data-aba="estoque"]'); adm.locator('#es-tabela').wait_for()
+    self.assertIn('Reserva central', adm.inner_text('#es-tabela'))
+    adm.click('[data-definir="Vicariato Beberibe"]'); adm.fill('#es-form-def input[name="qtd"]', '2'); adm.click('#es-def-ok')
+    adm.click('[data-definir="Reserva central"]'); adm.fill('#es-form-def input[name="qtd"]', '5'); adm.click('#es-def-ok')
+    adm.wait_for_function("document.querySelector('#es-numeros').innerText.includes('7')")
+    # equipe não vê o botão de definir estoque
+    eq.click('[data-aba="estoque"]'); self.assertEqual(eq.locator('[data-definir]').count(), 0)
+    # entrega 3 vestimentas em Beberibe (estoque 2): aviso de falta
+    eq.click('[data-aba="padres"]'); eq.select_option('#ck-vic', 'Vicariato Beberibe')
+    for nome in ('Hélio', 'João Henrique'):
+      self.item(eq, nome).locator('[data-ck="vestimenta"]').click(); eq.wait_for_timeout(150)
+    eq.wait_for_function("document.querySelector('#ck-vestimentas').textContent === '2'")
+    linha = adm.locator('.es-linha', has_text='Vicariato Beberibe')
+    adm.wait_for_function("[...document.querySelectorAll('.es-linha')].find(l=>l.innerText.includes('Vicariato Beberibe')).querySelector('.es-disp').textContent === '0'")
+    faltam = sum(1 for p in PADRES if p['tipo'] == 'padre' and p['vicariato'] == 'Vicariato Beberibe') - 2
+    self.assertIn(f'Pode faltar {faltam}' if faltam else 'Na conta certa', linha.inner_text(), 'situação = disponíveis − padres que faltam chegar')
+    # transferência insuficiente e depois válida, feita pela equipe; admin vê ao vivo
+    eq.click('[data-aba="estoque"]'); eq.click('#es-transferir')
+    eq.select_option('#es-tr-de', 'Vicariato Beberibe'); eq.select_option('#es-tr-para', 'Reserva central'); eq.fill('#es-form-tr input[name="qtd"]', '1'); eq.click('#es-tr-ok')
+    eq.wait_for_function("!document.querySelector('#es-tr-erro').hidden")
+    self.assertIn('só tem 0', eq.inner_text('#es-tr-erro'))
+    eq.select_option('#es-tr-de', 'Reserva central'); eq.select_option('#es-tr-para', 'Vicariato Beberibe'); eq.fill('#es-form-tr input[name="qtd"]', '3'); eq.click('#es-tr-ok')
+    adm.wait_for_function("[...document.querySelectorAll('.es-linha')].find(l=>l.innerText.includes('Vicariato Beberibe')).querySelector('.es-disp').textContent === '3'")
+    self.assertIn('Reserva central → Vicariato Beberibe', adm.text_content('#es-hist'))
+    self.assertEqual(eq.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), True)
+    eq.screenshot(path='/tmp/es-celular.png', full_page=True)
+    adm.screenshot(path='/tmp/es-desktop.png', full_page=True)
+
+  def test_pertences_com_foto_e_devolucao(self):
+    import base64
+    png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+    a = self.celular('Ana', mobile=True); b = self.celular('Bia')
+    a.select_option('#ck-vic', 'Vicariato Beberibe')
+    self.item(a, 'Hélio').locator('[data-pertences]').click()
+    a.fill('#pt-form input[name="desc"]', 'Mochila preta com notebook'); a.fill('#pt-form input[name="etq"]', '17')
+    a.set_input_files('#pt-form input[type="file"]', files=[{'name': 'foto.png', 'mimeType': 'image/png', 'buffer': png}])
+    a.wait_for_function("document.querySelector('#pt-foto-txt').textContent.includes('Trocar foto')")
+    a.click('#pt-salvar')
+    a.wait_for_function("document.querySelector('#toast').textContent.includes('Pertence guardado')")
+    self.assertEqual(a.evaluate('window.__fotoTipo'), 'image/jpeg', 'foto é enviada como JPEG comprimido')
+    self.assertIn('Nº 17', a.inner_text('#pt-lista-modal'))
+    a.wait_for_function("document.querySelector('#pt-lista-modal img').src.startsWith('data:image/jpeg')")
+    a.click('#pt-fechar')
+    self.assertIn('1 guardado', self.item(a, 'Hélio').inner_text())
+    # outro aparelho vê na aba PERTENCES e devolve
+    b.click('[data-aba="pertences"]')
+    b.wait_for_function("document.querySelector('#pt-itens').innerText.includes('Mochila preta')")
+    b.fill('#pt-busca', '17'); self.assertIn('Pe. Hélio do Nascimento', b.inner_text('#pt-itens'))
+    b.click('#pt-itens [data-devolver]'); b.click('#pt-dev-ok')
+    b.wait_for_function("document.querySelector('#pt-resumo').textContent.includes('Devolvidos: 1')")
+    b.click('[data-ptfiltro="devolvidos"]'); self.assertIn('Devolvido', b.inner_text('#pt-itens'))
+    self.assertIn('por Bia', b.inner_text('#pt-itens'))
+    a.click('[data-aba="pertences"]'); a.click('[data-ptfiltro="todos"]')
+    self.assertEqual(a.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), True)
+    a.screenshot(path='/tmp/pt-celular.png', full_page=True)
 
 if __name__ == '__main__':
   unittest.main()

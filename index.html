@@ -9,9 +9,9 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Credenciamento</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231f3a5f'/%3E%3Cpath d='M18 33l9 9 19-20' stroke='white' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-<script src="config.js?v=202611150838"></script>
+<script src="config.js?v=202611151105"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
-<link rel="stylesheet" href="styles.css?v=202611150838">
+<link rel="stylesheet" href="styles.css?v=202611151105">
 </head>
 <body>
 
@@ -67,10 +67,38 @@
     <button type="button" data-aba="padres" class="ativo">PADRES</button>
     <button type="button" data-aba="diaconos">DIÁCONOS</button>
     <button type="button" data-aba="bispos">BISPOS</button>
+    <button type="button" data-aba="estoque">ESTOQUE</button>
+    <button type="button" data-aba="pertences">PERTENCES</button>
     <button type="button" data-aba="cadastro">CADASTRO</button>
     <button type="button" data-aba="lista">LISTA GERAL</button>
   </nav>
   <main>
+    <!-- ---------- Estoque de casulas ---------- -->
+    <section id="aba-estoque" hidden>
+      <div class="es-topo">
+        <div><h2 class="es-titulo">Estoque de casulas</h2><p class="es-sub">Disponíveis = casulas do local − vestimentas entregues aos padres daquele vicariato.</p></div>
+        <div class="es-acoes"><button class="btn" id="es-transferir" type="button">⇄ TRANSFERIR</button><button class="chip" id="es-definir-novo" type="button" hidden>+ Definir estoque de um local</button></div>
+      </div>
+      <div id="es-numeros" class="es-numeros"></div>
+      <div id="es-tabela" class="es-tabela"></div>
+      <details class="es-historico"><summary>Movimentações</summary><div id="es-hist"></div></details>
+    </section>
+
+    <!-- ---------- Pertences ---------- -->
+    <section id="aba-pertences" hidden>
+      <div class="ck-busca sem-vic">
+        <div class="campo"><label for="pt-busca">Buscar por nome, etiqueta ou descrição</label>
+          <input id="pt-busca" type="search" placeholder="Ex.: 12, mochila, João" autocomplete="off"></div>
+        <div class="segmento ck-filtros" role="group" aria-label="Mostrar">
+          <button type="button" data-ptfiltro="guardados" class="ativo">Guardados</button>
+          <button type="button" data-ptfiltro="devolvidos">Devolvidos</button>
+          <button type="button" data-ptfiltro="todos">Todos</button>
+        </div>
+      </div>
+      <div class="barra-lista"><span class="info" id="pt-resumo"></span></div>
+      <div id="pt-itens"></div>
+    </section>
+
     <!-- ---------- Check-in de padres e bispos ---------- -->
     <section id="aba-checkin">
       <div class="ck-busca">
@@ -166,9 +194,10 @@
 <datalist id="dl-paroquias"></datalist>
 <datalist id="dl-vicariatos"></datalist>
 
-<script src="paroquias.js?v=202611150838"></script>
-<script src="api.js?v=202611150838"></script>
-<script src="app.js?v=202611150838"></script>
-<script src="checkin.js?v=202611150838"></script>
+<script src="paroquias.js?v=202611151105"></script>
+<script src="api.js?v=202611151105"></script>
+<script src="app.js?v=202611151105"></script>
+<script src="checkin.js?v=202611151105"></script>
+<script src="controle.js?v=202611151105"></script>
 </body>
 </html>

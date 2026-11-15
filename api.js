@@ -82,6 +82,42 @@ function criarApiSupabase(sb, cfg){
       if (error) falha(error);
       return data;
     },
+    /* ---------- Estoque de casulas e pertences ---------- */
+    async tabela(nome){
+      const out = []; let ultimo = 0;
+      for (;;) {
+        const { data, error } = await sb.from(nome).select('*').gt('id', ultimo).order('id', { ascending: true }).limit(1000);
+        if (error) falha(error);
+        out.push(...data);
+        if (data.length < 1000) break;
+        ultimo = data[data.length - 1].id;
+      }
+      return out;
+    },
+    async rpc(nome, args){
+      const { data, error } = await sb.rpc(nome, args);
+      if (error) falha(error);
+      return data;
+    },
+    async enviarFoto(blob, padreId){
+      const nome = `padre_${padreId}/${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}.jpg`;
+      const { error } = await sb.storage.from('pertences').upload(nome, blob, { contentType: 'image/jpeg', upsert: false });
+      if (error) falha(error);
+      return nome;
+    },
+    async urlFoto(caminho){
+      const { data, error } = await sb.storage.from('pertences').createSignedUrl(caminho, 3600);
+      if (error) falha(error);
+      return data.signedUrl;
+    },
+    ouvirTabela(nome, aoMudar){
+      const canal = sb.channel(nome + '-' + Math.random().toString(36).slice(2))
+        .on('postgres_changes', { event: '*', schema: 'public', table: nome },
+            pl => aoMudar({ tipo: pl.eventType, novo: pl.new, antigo: pl.old }))
+        .subscribe();
+      return () => sb.removeChannel(canal);
+    },
+
     ouvirPadres(aoMudar, aoStatus){
       const canal = sb.channel('padres-' + Math.random().toString(36).slice(2))
         .on('postgres_changes', { event: '*', schema: 'public', table: 'padres' },

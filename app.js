@@ -221,10 +221,14 @@ function trocarAba(aba){
   $('#aba-lista').hidden = aba !== 'lista';
   const ck = ['padres', 'diaconos', 'bispos'].includes(aba);
   $('#aba-checkin').hidden = !ck;
+  $('#aba-estoque').hidden = aba !== 'estoque';
+  $('#aba-pertences').hidden = aba !== 'pertences';
+  $('.contador').hidden = aba === 'estoque' || aba === 'pertences';
   $('#contador-participantes').hidden = ck;
   $('#contador-padres').hidden = !ck;
   if (aba === 'lista') renderLista();
   else if (ck) { S.abaCk = aba; if (window.CK) CK.aoMostrar(aba); }
+  else if (aba === 'estoque' || aba === 'pertences') { if (window.CT) CT.aoMostrar(); }
   else el.nome.focus();
 }
 
@@ -543,9 +547,11 @@ function entrarNoApp(email, nome){
   trocarAba('padres');
   iniciarTempoReal();
   if (window.CK) CK.iniciar();
+  if (window.CT) CT.iniciar();
 }
 function encerrarSessao(){
   if (window.CK) CK.parar();
+  if (window.CT) CT.parar();
   pararTempoReal(); S.perfil = null; S.clientId = null; S.recep = '';
   CAMPOS.forEach(c => { c.value = ''; limparErroCampo(c); });
   el.itens.replaceChildren(); el.ultimo.textContent = ''; el.total.textContent = '…';
